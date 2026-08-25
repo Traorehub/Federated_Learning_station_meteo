@@ -1,0 +1,77 @@
+name: federated
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: fl_nginx
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    volumes:
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks:
+      - fl_network
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: fl_frontend
+    restart: unless-stopped
+    networks:
+      - fl_network
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: fl_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://fl_user:${DB_PASSWORD}@db:5432/federated
+      INGEST_TOKEN: ${INGEST_TOKEN}
+      CORS_ORIGINS: https://federated.near-u-api.org,http://localhost:5173,http://localhost:8082
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 25s
+    networks:
+      - fl_network
+
+  db:
+    image: postgres:16-alpine
+    container_name: fl_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fl_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: federated
+    volumes:
+      - fl_postgres_data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fl_user -d federated"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fl_network
+
+volumes:
+  fl_postgres_data:
+
+networks:
+  fl_network:
+    driver: bridge
