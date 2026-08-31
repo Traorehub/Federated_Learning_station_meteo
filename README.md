@@ -16,7 +16,7 @@
 
 Prototype pédagogique. Deux nœuds ESP32 distants (capteur DHT11 et radio LoRa RA-02) communiquent avec une gateway Arduino Uno. Un PC, placé entre la radio et le serveur, transmet les paquets vers le backend que chacun déploie. Le dashboard permet de vérifier que la liaison radio fonctionne réellement.
 
-L’étape actuelle est le **dashboard v1** : valider la chaîne de communication. Il n’y a pas encore d’entraînement local ni d’agrégation FedAvg. Le Federated Learning interviendra une fois cette chaîne stable.
+**État actuel du code.** La chaîne de communication (**v1**) est opérationnelle. Les nœuds entraînent **localement** un régresseur linéaire minuscule et envoient les poids par LoRa (table `fl_updates`). L’**agrégation FedAvg** au sens de McMahan et al. (2017), c’est-à-dire la moyenne des modèles et le renvoi du modèle global, n’est **pas encore** exécutée sur le serveur.
 
 Il n’existe pas d’instance publique maintenue en continu. Chaque personne déploie le serveur chez elle (Docker en local, VPS ou nom de domaine personnel) et peut l’arrêter à tout moment.
 
@@ -31,7 +31,7 @@ Câbler, alimenter, flasher, lire un capteur, établir un lien LoRa. Cette étap
 Le firmware, le câblage et le dashboard sont documentés pour qu’une autre personne puisse refaire le montage **avec son matériel et son serveur**. Licence MIT. L’intérêt n’est pas un site d’auteur accessible en permanence, mais la possibilité de reproduire l’expérience.
 
 **3. Poser l’instrument pour le Federated Learning.**  
-Lorsque la radio et l’ingestion sont stables, le même banc servira à l’apprentissage fédéré : entraînement local sur les nœuds, agrégation (FedAvg et variantes), comparaison synchrone / asynchrone, et mesure de l’effet du réseau LoRa sur le modèle (pertes, latence, nœuds absents). La v1 ne fait pas encore cela. Sans cette couche de communication, les expériences FL ne pourraient pas relier leurs résultats au canal radio.
+Lorsque la radio et l’ingestion sont stables, le même banc sert à l’apprentissage fédéré : entraînement local sur les nœuds, puis agrégation de type FedAvg (McMahan et al., 2017), comparaison synchrone / asynchrone, et mesure de l’effet du réseau LoRa sur le modèle (pertes, latence, nœuds absents). Sans la couche de communication, les expériences FL ne pourraient pas relier leurs résultats au canal radio.
 
 ## Prérequis
 
@@ -115,7 +115,7 @@ Les termes ci-dessous reviennent dans le firmware, le JSON de la gateway et le d
 | **DIO0** | Broche d’interruption du RA-02 : signale qu’un paquet est arrivé ou que l’émission est terminée. |
 | **GPIO** | Broche d’entrée/sortie programmable d’un ESP32 (numérotée, par exemple GPIO 5). |
 | **Gateway** | Ici : l’Arduino Uno. Elle reçoit les paquets LoRa, ajoute RSSI et SNR, et envoie une ligne JSON vers le PC. |
-| **FedAvg** | *Federated Averaging* : le serveur moyenne les modèles entraînés localement. Documenté pour la suite, **pas encore implémenté** (dashboard v1). |
+| **FedAvg** | *Federated Averaging* (McMahan et al., 2017) : moyenne pondérée des poids locaux. Formule et statut : section ci-dessous. |
 | **POC** | *Proof of concept* : maquette destinée à démontrer que la chaîne fonctionne, pas un produit fini. |
 
 Le détail radio (format des 14 octets, SF / BW / CR) est dans [docs/LORA.md](docs/LORA.md).
@@ -132,20 +132,63 @@ Un banc limité au Serial Monitor reste difficile à relire et à partager. D’
 |--------|------|-----|
 | **1. Physique** | Capteurs, MCU, alimentation, fils | DHT11, ESP32, RA-02, Uno, convertisseur de niveaux |
 | **2. Communication** | Transport objet → laboratoire | LoRa 433 MHz, USB 115200, HTTP POST |
-| **3. Plateforme** | Stockage | FastAPI, PostgreSQL (une table `readings` + `node_id`) |
+| **3. Plateforme** | Stockage | FastAPI, PostgreSQL (`readings`, `node_stats`, `fl_updates`) |
 | **4. Application** | Preuve que la chaîne fonctionne | Dashboard React, flux WebSocket |
 
 ## Méthodologie
 
 | Phase | Objectif | Statut |
 |-------|----------|--------|
-| **v1** | Prouver ESP32 → LoRa → Uno → PC → site | En cours |
-| **v2** | Rounds FedAvg synchrones, états des nœuds, loss / accuracy | Après v1 figée |
+| **v1** | Prouver ESP32 → LoRa → Uno → PC → site | **Réalisée** (dashboard comms) |
+| **v2a** | Entraînement local + transport des poids sur LoRa | **Réalisée** (table `fl_updates`) |
+| **v2b** | FedAvg synchrone : moyenne serveur + modèle global renvoyé | **À faire** |
 | **v3** | Pertes, latence, RSSI dans le temps (métriques de thèse) | Plus tard |
 
-FedAvg **synchrone** pour le POC : le serveur envoie un signal de début de round, et tous les nœuds s’entraînent au même moment. Ce mode est plus simple à déboguer. L’asynchrone est plus réaliste pour un FL décentralisé ; il est prévu pour la suite. Cette décision est **documentée**, pas encore implémentée.
+FedAvg **synchrone** pour le POC : le serveur envoie un signal de début de round, et les nœuds qui participent s’entraînent dans la même fenêtre. Ce mode est plus simple à déboguer. L’asynchrone (chaque nœud envoie selon sa radio) est plus réaliste en LoRa ; il est prévu après le FedAvg sync.
 
-Capture en continu (DHT toutes les 15 s, tampon local). Entraînement par round, pas en même temps que la capture. La v1 se limite à capter, envoyer et afficher.
+Capture en continu (DHT toutes les 15 s, tampon local de 32 échantillons). L’entraînement local (SGD) tourne sur ce tampon. L’agrégation fédérée, elle, n’a lieu **que** lorsqu’un round est clos côté serveur. Ce n’est pas encore le cas.
+
+## Apprentissage fédéré et FedAvg
+
+Le Federated Learning vise à entraîner un modèle **sans centraliser les données brutes**. Chaque client \(k\) minimise une perte locale \(F_k\) sur son jeu \(D_k\) (ici : mesures DHT11 qui **restent sur l’ESP32**). Seuls les **paramètres** circulent.
+
+L’algorithme retenu pour le POC est **Federated Averaging** (FedAvg), introduit par McMahan, Moore, Ramage, Hampson et y Arcas (2017) dans *Communication-Efficient Learning of Deep Networks from Decentralized Data* (AISTATS, PMLR 54). Après un round \(t\), le serveur forme le modèle global par **moyenne pondérée** par la taille des jeux locaux \(n_k = |D_k|\) :
+
+$$
+w_{t+1} \;\leftarrow\; \sum_{k=1}^{K} \frac{n_k}{n}\, w_{t+1}^{(k)}
+\quad\text{avec}\quad
+n = \sum_{k=1}^{K} n_k .
+$$
+
+\(K = 2\) sur ce banc. Un nœud absent (timeout LoRa) n’entre pas dans la somme : c’est précisément le cas expérimental du client en bord de couverture.
+
+### Modèle embarqué (déjà en firmware)
+
+Régresseur linéaire, quatre coefficients. On prédit la température au pas suivant à partir des deux températures précédentes et de l’humidité précédente (entrées normalisées \(T/50\), \(H/100\)) :
+
+$$
+\frac{\hat{T}_t}{50}
+=
+w_0\,\frac{T_{t-1}}{50}
++ w_1\,\frac{T_{t-2}}{50}
++ w_2\,\frac{H_{t-1}}{100}
++ w_3 .
+$$
+
+Le vecteur \(w = (w_0,w_1,w_2,w_3)\) part en LoRa (paquet 25 octets). **FedAvg consistera à moyenner ces quatre composantes** entre nœuds, puis à renvoyer \(w_{\text{global}}\). Cette moyenne n’est **pas** encore calculée par l’API.
+
+## Première campagne (matériel réel)
+
+Deux pièces, même gateway Uno. Nœud 1 (WROOM-32D) près de la gateway (lien témoin). Nœud 2 (ESP32-S3) plus loin (lien dégradé, climat distinct). LoRa 433 MHz, SF7, BW 125 kHz. Données lues sur le Postgres du déploiement personnel (29 août 2026) :
+
+| Nœud | Lectures capteur | Poids reçus | RSSI moyen | SNR moyen | T moy. | Hum. moy. |
+|------|------------------|-------------|------------|-----------|--------|-----------|
+| 1 | 995 | 197 | −62,3 dBm | 9,77 dB | 24,9 °C | 63,1 % |
+| 2 | 1082 | 195 | −83,9 dBm | 3,78 dB | 28,6 °C | 54,8 % |
+
+Un seul `bad_header` (`node_id` 0). En phase « pièce distante », le nœud 2 a été observé vers **−100 dBm** avec un SNR parfois **négatif**, tout en restant décodable (`ok = true`). Les deux vecteurs \(w\) locaux divergent : chaque nœud apprend **son** microclimat (données non i.i.d.). C’est le régime pour lequel FedAvg est conçu.
+
+Le nœud proche n’est **pas** un défaut : c’est le client qui répond de façon fiable. Le nœud loin teste la fédération sous contrainte radio.
 
 ## Chaîne
 
@@ -157,7 +200,7 @@ Capture en continu (DHT toutes les 15 s, tampon local). Entraînement par round,
                             v
                       [ RA-02 + Uno ]  --USB 115200-->  [ agent PC ]
                                                             |
-                                                      HTTPS /api/ingest
+                                                      HTTPS /api/ingest et /api/fl/update
                                                             v
                                               [ API + Postgres + dashboard ]
 ```
@@ -173,7 +216,7 @@ Capture en continu (DHT toutes les 15 s, tampon local). Entraînement par round,
 
 MQTT pourra être envisagé plus tard, si un nœud doit joindre le cloud **sans** PC intermédiaire. Ce n’est pas le cas de ce banc.
 
-Paquet LoRa : `node_id`, `seq`, température, humidité, uptime, checksum. La gateway ajoute RSSI et SNR. Un `bad_header` (magic ou version invalides, souvent associé à un RSSI trop faible pour un décodage fiable) est enregistré avec `node_id` 0 : il s’agit d’un paquet **corrompu**, pas d’un trou de séquence d’un nœud.
+Paquet capteur LoRa (14 octets, v1) : `node_id`, `seq`, température, humidité, uptime, checksum. Paquet **poids** (25 octets, v2) : les quatre coefficients \(w_i\). La gateway ajoute RSSI et SNR (mesurés par le SX1278 **à la réception**). Un `bad_header` est enregistré avec `node_id` 0 : paquet **corrompu**, pas un trou de `seq`.
 
 Détail radio et broches : [docs/LORA.md](docs/LORA.md), [docs/HARDWARE.md](docs/HARDWARE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -185,7 +228,7 @@ Détail radio et broches : [docs/LORA.md](docs/LORA.md), [docs/HARDWARE.md](docs
 | ESP32-S3 | `firmware/node_esp32_s3` | NSS 5, SCK 18, MOSI 6, MISO 16, RST 14, DIO0 15, DHT GPIO 2 |
 | Arduino Uno | `firmware/gateway_uno` | NSS D10, SCK D13, MOSI D11, MISO D12, RST D9, DIO0 D2 |
 
-Sur l’ESP32-S3, `SPI.begin(18, 16, 6, 5)` est obligatoire avant `LoRa.begin` (le SPI par défaut ne correspond pas au câblage).
+Sur l’ESP32-S3, `SPI.begin(18, 16, 6, 5)` est obligatoire avant `LoRa.begin` (le SPI par défaut ne correspond pas au câblage). Les sketches nœuds font aussi le SGD local et l’émission des poids (`fl_model.h`, `fl_pkt.h`).
 
 Validation Serial Monitor (115200) :
 
@@ -208,7 +251,7 @@ Validation Serial Monitor (115200) :
 
 ## Démo
 
-Le GIF ci-dessous s’anime dans la page. Un clic ouvre le fichier MP4 (vitesse normale).
+Le GIF s’anime dans la page. Un clic ouvre la vidéo complète (MP4).
 
 <a href="docs/media/demo-dashboard.mp4">
   <img src="docs/media/demo-dashboard.gif" alt="Dashboard v1 : nœuds 1 et 2, temp, hum, RSSI, seq" width="100%" />
@@ -226,9 +269,9 @@ Le GIF ci-dessous s’anime dans la page. Un clic ouvre le fichier MP4 (vitesse 
 
 | Composant | Rôle |
 |-----------|------|
-| `agent/serial_bridge.py` | Lit le port COM, POST `/api/ingest` |
-| FastAPI + Uvicorn | Ingest, overview, WebSocket `/ws/live` |
-| PostgreSQL 16 | `readings` + `node_stats` |
+| `agent/serial_bridge.py` | Lit le port COM, POST `/api/ingest` et `/api/fl/update` |
+| FastAPI + Uvicorn | Ingest capteur, ingest poids, overview, WebSocket `/ws/live` |
+| PostgreSQL 16 | `readings`, `node_stats`, `fl_updates` |
 | React (Vite) | Cartes nœuds, journal, âge du dernier paquet |
 | Docker / nginx | Reverse proxy. Brancher un domaine personnel ou un tunnel si besoin |
 
@@ -275,6 +318,10 @@ Déploiement (local ou VPS personnel) : [docs/DEPLOY.md](docs/DEPLOY.md).
 | [docs/LORA.md](docs/LORA.md) | Format paquet, SF / BW / CR |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Sync vs async, v1 / v2 / v3 |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Docker, tunnel optionnel |
+
+## Références
+
+McMahan, H. B., Moore, E., Ramage, D., Hampson, S. et y Arcas, B. A. (2017). Communication-efficient learning of deep networks from decentralized data. In *Proceedings of the 20th International Conference on Artificial Intelligence and Statistics* (AISTATS), PMLR 54, 1273-1282. [http://proceedings.mlr.press/v54/mcmahan17a.html](http://proceedings.mlr.press/v54/mcmahan17a.html)
 
 ## Licence
 

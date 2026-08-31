@@ -42,10 +42,42 @@ Le timestamp d’affichage est celui de **réception** (PC ou serveur, UTC).
 Le **compteur `seq`** est obligatoire dès la v1 : c’est lui qui mesurera
 le taux de perte de paquets (métrique de thèse).
 
+## Origine des indicateurs réseau (ce que montre le dashboard)
+
+Les nœuds **ne mesurent pas** le RSSI de leur propre émission. C’est la
+gateway qui, à chaque paquet reçu, interroge la puce SX1278 :
+
+| Indicateur | Où il est produit | Chemin jusqu’au dashboard |
+|------------|-------------------|---------------------------|
+| **RSSI**, **SNR** | `LoRa.packetRssi()` / `packetSnr()` sur l’Uno, juste après `parsePacket()` | JSON USB → agent PC → `POST /api/ingest` → colonnes `readings.rssi` / `snr` et `node_stats.last_rssi` / `last_snr` |
+| **`ok`** | Gateway : XOR du paquet == octet checksum | même JSON, champ `ok` → `checksum_ok` |
+| **`seq`** | Compteur du nœud, dans le paquet 14 octets | JSON → `readings.seq` ; le serveur compare au `last_seq` pour compter les **manquants** |
+| **Perte** | Serveur uniquement : `missing / (received + missing)` | `node_stats`, renvoyé par `/api/overview` |
+| **Corrompus** | Serveur : incrémente si `ok` est faux, ou `bad_header` (`node_id` 0) | `node_stats.packets_corrupt` |
+| **Âge / en ligne** | Frontend : `now - last_seen_at` (`received_at` = horloge du PC à l’ingestion) | pas une mesure radio |
+
 Un `bad_header` (magic ou version invalides, souvent associé à un RSSI trop
 faible pour un décodage fiable) est un paquet radio **reçu mais illisible**.
 Il est enregistré avec `node_id` 0 : cela compte comme **corrompu**,
 pas comme un trou de séquence d’un nœud.
+
+## Paquets v2 (poids du modèle local)
+
+Le paquet capteur v1 (14 octets, version `0x01`) **ne change pas**.
+
+En plus, toutes les 4 mesures, le nœud envoie 25 octets (version `0x02`,
+type `0x20`) : les 4 coefficients du modèle linéaire (T[t] prédite à partir
+de T[t-1], T[t-2], H[t-1]). La gateway y ajoute aussi RSSI / SNR, et l’agent
+poste `POST /api/fl/update`. L’agrégation FedAvg n’est pas encore faite
+côté serveur.
+
+Émission gateway (optionnel, ligne USB) :
+
+```text
+{"cmd":"start_round","round":1}
+```
+
+Les nœuds écoutent 400 ms après chaque TX capteur.
 
 ## Ce que la gateway ajoute
 

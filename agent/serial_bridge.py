@@ -1,4 +1,4 @@
-"""Lit le JSON ligne à ligne de la gateway Arduino et POST /api/ingest."""
+"""Lit le JSON ligne à ligne de la gateway Arduino et POST /api/ingest ou /api/fl/update."""
 
 from __future__ import annotations
 
@@ -31,9 +31,9 @@ def detect_port(preferred: str | None) -> str:
     raise SystemExit("Précise --port COMx")
 
 
-def post_reading(url: str, token: str, payload: dict) -> None:
+def post_json(url: str, token: str, path: str, payload: dict) -> None:
     r = requests.post(
-        f"{url.rstrip('/')}/api/ingest",
+        f"{url.rstrip('/')}{path}",
         json=payload,
         headers={"X-Ingest-Token": token},
         timeout=15,
@@ -41,38 +41,62 @@ def post_reading(url: str, token: str, payload: dict) -> None:
     r.raise_for_status()
 
 
-def build_payload(msg: dict) -> dict | None:
+def route_message(msg: dict) -> tuple[str, dict] | None:
     now = datetime.now(timezone.utc).isoformat()
-    if msg.get("status"):
+    if msg.get("status") or msg.get("type") == "start_round_tx":
         return None
+    if msg.get("type") == "weights":
+        w = msg.get("w")
+        if not isinstance(w, list) or len(w) != 4 or "node_id" not in msg:
+            return None
+        return (
+            "/api/fl/update",
+            {
+                "node_id": int(msg["node_id"]),
+                "seq": int(msg.get("seq") or 0),
+                "n_samples": int(msg.get("n_samples") or 0),
+                "round_id": int(msg.get("round_id") or 0),
+                "w": [float(x) for x in w],
+                "rssi": msg.get("rssi"),
+                "snr": msg.get("snr"),
+                "ok": bool(msg.get("ok", True)),
+                "received_at": now,
+            },
+        )
     if msg.get("error") == "bad_header" or (
         msg.get("ok") is False and "node_id" not in msg
     ):
-        return {
-            "node_id": 0,
-            "seq": 0,
-            "temp": None,
-            "hum": None,
-            "rssi": msg.get("rssi"),
-            "snr": msg.get("snr"),
-            "ok": False,
-            "error": str(msg.get("error") or "bad_header"),
-            "received_at": now,
-        }
+        return (
+            "/api/ingest",
+            {
+                "node_id": 0,
+                "seq": 0,
+                "temp": None,
+                "hum": None,
+                "rssi": msg.get("rssi"),
+                "snr": msg.get("snr"),
+                "ok": False,
+                "error": str(msg.get("error") or "bad_header"),
+                "received_at": now,
+            },
+        )
     if "node_id" not in msg or "seq" not in msg:
         return None
-    return {
-        "node_id": int(msg["node_id"]),
-        "seq": int(msg["seq"]),
-        "temp": float(msg["temp"]),
-        "hum": float(msg["hum"]),
-        "rssi": msg.get("rssi"),
-        "snr": msg.get("snr"),
-        "uptime_s": msg.get("uptime_s"),
-        "ok": bool(msg.get("ok", True)),
-        "error": msg.get("error"),
-        "received_at": now,
-    }
+    return (
+        "/api/ingest",
+        {
+            "node_id": int(msg["node_id"]),
+            "seq": int(msg["seq"]),
+            "temp": float(msg["temp"]),
+            "hum": float(msg["hum"]),
+            "rssi": msg.get("rssi"),
+            "snr": msg.get("snr"),
+            "uptime_s": msg.get("uptime_s"),
+            "ok": bool(msg.get("ok", True)),
+            "error": msg.get("error"),
+            "received_at": now,
+        },
+    )
 
 
 def main() -> None:
@@ -102,11 +126,12 @@ def main() -> None:
                         msg = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    payload = build_payload(msg)
-                    if payload is None:
+                    routed = route_message(msg)
+                    if routed is None:
                         continue
+                    path, payload = routed
                     try:
-                        post_reading(args.url, args.token, payload)
+                        post_json(args.url, args.token, path, payload)
                     except requests.RequestException as exc:
                         print(f"POST échoué : {exc}", file=sys.stderr)
         except serial.SerialException as exc:

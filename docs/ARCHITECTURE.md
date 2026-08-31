@@ -2,8 +2,7 @@
 
 ## Périmètre actuel
 
-**Dashboard v1 uniquement.** Chaîne de réception et visualisation brute.
-Aucune logique d’entraînement, d’agrégation FedAvg, ni de rounds.
+**Dashboard v1** (comms) plus envoi des poids locaux. Pas encore d’agrégation FedAvg.
 
 ```
 ESP32 + DHT11 + RA-02  --LoRa 433 MHz-->  Arduino Uno + RA-02
@@ -39,6 +38,9 @@ La capture et l’entraînement ne sont pas simultanés. Ce n’est pas non plus
    - soit un signal du serveur (tous les nœuds s’entraînent maintenant).
 
 Cette étape 1 n’implémente que (1) : capter, envoyer, stocker, afficher.
+Les nœuds v2 ajoutent un tampon local et un entraînement SGD minuscule ;
+ils envoient les poids en LoRa. L’agrégation FedAvg serveur n’est pas encore
+codée.
 
 ## Décision méthodologique : synchrone vs asynchrone
 
@@ -80,10 +82,9 @@ Le serveur ne se limite pas au stockage :
 - **Paquets corrompus** (checksum LoRa invalide)
 - **Âge** = maintenant - `last_seen_at`
 
-## Hors périmètre (volontairement)
+## Hors périmètre (volontairement, pour l’instant)
 
-- Entraînement local sur ESP32
-- Agrégation FedAvg
-- Signal `start round`
-- MQTT (inutile tant que le PC relaie déjà en HTTP)
-- Dashboard v2 / v3
+- Agrégation FedAvg sur le serveur
+- Dashboard v2 (rounds, loss / accuracy)
+- MQTT
+- Dashboard v3

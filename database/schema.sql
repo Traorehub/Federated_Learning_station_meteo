@@ -38,3 +38,22 @@ CREATE TABLE IF NOT EXISTS node_stats (
 ALTER TABLE readings ALTER COLUMN temperature DROP NOT NULL;
 ALTER TABLE readings ALTER COLUMN humidity DROP NOT NULL;
 ALTER TABLE readings ADD COLUMN IF NOT EXISTS error TEXT;
+
+CREATE TABLE IF NOT EXISTS fl_updates (
+    id              BIGSERIAL PRIMARY KEY,
+    node_id         SMALLINT NOT NULL,
+    seq             INTEGER NOT NULL DEFAULT 0,
+    n_samples       INTEGER NOT NULL DEFAULT 0,
+    round_id        INTEGER NOT NULL DEFAULT 0,
+    w0              REAL,
+    w1              REAL,
+    w2              REAL,
+    w3              REAL,
+    rssi            SMALLINT,
+    snr             REAL,
+    checksum_ok     BOOLEAN NOT NULL DEFAULT TRUE,
+    received_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_fl_updates_node_time
+    ON fl_updates (node_id, received_at DESC);

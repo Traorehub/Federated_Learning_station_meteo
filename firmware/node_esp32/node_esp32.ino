@@ -4,10 +4,12 @@
  * Broches WROOM-32D (câblage respecté) :
  * NSS 5, SCK 18, MOSI 23, MISO 19, RST 14, DIO0 26
  *
- * ESP32-S3 : voir firmware/node_esp32_s3
+ * Capture DHT toutes les 15 s (paquet v1, 14 octets).
+ * Tampon local + SGD : prédire T[t] à partir de T[t-1], T[t-2], H[t-1].
+ * Toutes les WEIGHT_EVERY mesures, envoi des 4 poids (paquet v2).
  *
- * Un envoi toutes les SEND_INTERVAL_MS, indépendamment de tout entraînement.
- * Changer NODE_ID avant de flasher.
+ * TX labo 5 dBm (brownout). Pour 30-40 m indoor, préférer ce nœud
+ * près de la gateway, ou tester 10 dBm si l'alim tient.
  *
  * Bibliothèques : LoRa (Sandeep Mistry), DHT sensor library (Adafruit).
  */
@@ -16,9 +18,13 @@
 #include <SPI.h>
 #include <LoRa.h>
 #include <DHT.h>
+#include "fl_pkt.h"
+#include "fl_model.h"
 
 #define NODE_ID            1
 #define SEND_INTERVAL_MS   15000UL
+#define WEIGHT_EVERY       4
+#define RX_WINDOW_MS       400UL
 
 #define DHTPIN             4
 #define DHTTYPE            DHT11
@@ -33,40 +39,16 @@
 #define LORA_FREQ          433E6
 #define LORA_SF            7
 #define LORA_BW            125E3
-#define LORA_CR            5          /* 4/5 */
+#define LORA_CR            5
 #define LORA_TX_POWER      5
 #define LORA_SYNC          0x12
 
-#define PKT_MAGIC          0xA5
-#define PKT_VERSION        0x01
-#define PKT_LEN            14
-
 DHT dht(DHTPIN, DHTTYPE);
-
+FlModel model;
 uint16_t seq = 0;
+uint16_t roundId = 0;
+uint8_t sinceWeights = 0;
 unsigned long lastSend = 0;
-
-static uint8_t xor8(const uint8_t *d, size_t n) {
-  uint8_t x = 0;
-  for (size_t i = 0; i < n; i++) x ^= d[i];
-  return x;
-}
-
-static void putU16(uint8_t *p, uint16_t v) {
-  p[0] = (uint8_t)(v & 0xFF);
-  p[1] = (uint8_t)((v >> 8) & 0xFF);
-}
-
-static void putI16(uint8_t *p, int16_t v) {
-  putU16(p, (uint16_t)v);
-}
-
-static void putU32(uint8_t *p, uint32_t v) {
-  p[0] = (uint8_t)(v & 0xFF);
-  p[1] = (uint8_t)((v >> 8) & 0xFF);
-  p[2] = (uint8_t)((v >> 16) & 0xFF);
-  p[3] = (uint8_t)((v >> 24) & 0xFF);
-}
 
 static void configureRadio() {
   LoRa.setSpreadingFactor(LORA_SF);
@@ -75,6 +57,79 @@ static void configureRadio() {
   LoRa.setTxPower(LORA_TX_POWER);
   LoRa.setSyncWord(LORA_SYNC);
   LoRa.enableCrc();
+}
+
+static void sendSensor(float t, float h) {
+  uint8_t pkt[PKT_SENSOR_LEN];
+  pkt[0] = PKT_MAGIC;
+  pkt[1] = PKT_VERSION_SENSOR;
+  pkt[2] = (uint8_t)NODE_ID;
+  pkt_put_u16(&pkt[3], seq);
+  pkt_put_i16(&pkt[5], (int16_t)lroundf(t * 10.0f));
+  pkt_put_u16(&pkt[7], (uint16_t)lroundf(h * 10.0f));
+  pkt_put_u32(&pkt[9], millis() / 1000UL);
+  pkt[13] = pkt_xor8(pkt, 13);
+
+  LoRa.beginPacket();
+  LoRa.write(pkt, PKT_SENSOR_LEN);
+  LoRa.endPacket();
+}
+
+static void sendWeights() {
+  uint8_t pkt[PKT_WEIGHTS_LEN];
+  pkt[0] = PKT_MAGIC;
+  pkt[1] = PKT_VERSION_FL;
+  pkt[2] = PKT_TYPE_WEIGHTS;
+  pkt[3] = (uint8_t)NODE_ID;
+  pkt_put_u16(&pkt[4], seq);
+  pkt_put_u16(&pkt[6], model.n_trained);
+  pkt_put_i32(&pkt[8], fl_to_fixed(model.w[0]));
+  pkt_put_i32(&pkt[12], fl_to_fixed(model.w[1]));
+  pkt_put_i32(&pkt[16], fl_to_fixed(model.w[2]));
+  pkt_put_i32(&pkt[20], fl_to_fixed(model.w[3]));
+  pkt[24] = pkt_xor8(pkt, 24);
+
+  LoRa.beginPacket();
+  LoRa.write(pkt, PKT_WEIGHTS_LEN);
+  LoRa.endPacket();
+
+  Serial.print("TX weights id=");
+  Serial.print(NODE_ID);
+  Serial.print(" n=");
+  Serial.print(model.n_trained);
+  Serial.print(" w=");
+  Serial.print(model.w[0], 4);
+  Serial.print(",");
+  Serial.print(model.w[1], 4);
+  Serial.print(",");
+  Serial.print(model.w[2], 4);
+  Serial.print(",");
+  Serial.println(model.w[3], 4);
+}
+
+static void listenDownlink() {
+  LoRa.receive();
+  unsigned long t0 = millis();
+  while (millis() - t0 < RX_WINDOW_MS) {
+    int n = LoRa.parsePacket();
+    if (n < PKT_START_LEN) continue;
+    uint8_t buf[PKT_START_LEN];
+    int got = 0;
+    while (LoRa.available() && got < PKT_START_LEN) {
+      buf[got++] = (uint8_t)LoRa.read();
+    }
+    while (LoRa.available()) LoRa.read();
+    if (got != PKT_START_LEN) continue;
+    if (buf[0] != PKT_MAGIC || buf[1] != PKT_VERSION_FL || buf[2] != PKT_TYPE_START) {
+      continue;
+    }
+    if (pkt_xor8(buf, 7) != buf[7]) continue;
+    roundId = pkt_get_u16(&buf[4]);
+    Serial.print("RX start_round ");
+    Serial.println(roundId);
+    fl_train(&model);
+    sendWeights();
+  }
 }
 
 void setup() {
@@ -87,6 +142,7 @@ void setup() {
   delay(2000);
 
   dht.begin();
+  fl_init(&model);
 
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
@@ -113,19 +169,9 @@ void loop() {
     return;
   }
 
-  uint8_t pkt[PKT_LEN];
-  pkt[0] = PKT_MAGIC;
-  pkt[1] = PKT_VERSION;
-  pkt[2] = (uint8_t)NODE_ID;
-  putU16(&pkt[3], seq);
-  putI16(&pkt[5], (int16_t)lroundf(t * 10.0f));
-  putU16(&pkt[7], (uint16_t)lroundf(h * 10.0f));
-  putU32(&pkt[9], millis() / 1000UL);
-  pkt[13] = xor8(pkt, 13);
-
-  LoRa.beginPacket();
-  LoRa.write(pkt, PKT_LEN);
-  LoRa.endPacket();
+  fl_push(&model, t, h);
+  fl_train(&model);
+  sendSensor(t, h);
 
   Serial.print("TX id=");
   Serial.print(NODE_ID);
@@ -137,4 +183,12 @@ void loop() {
   Serial.println(h, 1);
 
   seq++;
+  sinceWeights++;
+  if (sinceWeights >= WEIGHT_EVERY && model.n >= 3) {
+    delay(200U * NODE_ID);
+    sendWeights();
+    sinceWeights = 0;
+  }
+
+  listenDownlink();
 }

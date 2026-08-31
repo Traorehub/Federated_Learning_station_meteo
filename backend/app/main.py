@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import connect, close, get_pool, record_to_dict
+from .fl_ingest import FlUpdatePayload, ingest_fl_update
 from .ingest import IngestPayload, ingest_reading
 from .seq import loss_rate
 from .ws import hub
@@ -43,6 +44,22 @@ CREATE TABLE IF NOT EXISTS node_stats (
 ALTER TABLE readings ALTER COLUMN temperature DROP NOT NULL;
 ALTER TABLE readings ALTER COLUMN humidity DROP NOT NULL;
 ALTER TABLE readings ADD COLUMN IF NOT EXISTS error TEXT;
+CREATE TABLE IF NOT EXISTS fl_updates (
+    id              BIGSERIAL PRIMARY KEY,
+    node_id         SMALLINT NOT NULL,
+    seq             INTEGER NOT NULL DEFAULT 0,
+    n_samples       INTEGER NOT NULL DEFAULT 0,
+    round_id        INTEGER NOT NULL DEFAULT 0,
+    w0              REAL,
+    w1              REAL,
+    w2              REAL,
+    w3              REAL,
+    rssi            SMALLINT,
+    snr             REAL,
+    checksum_ok     BOOLEAN NOT NULL DEFAULT TRUE,
+    received_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_fl_updates_node_time ON fl_updates (node_id, received_at DESC);
 """
 
 
@@ -98,7 +115,7 @@ def enrich_stats(row: dict) -> dict:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"ok": True, "stage": "v1", "fl": False}
+    return {"ok": True, "stage": "v1", "fl": True, "fl_agg": False}
 
 
 @app.post("/api/ingest")
@@ -112,6 +129,19 @@ async def ingest(
             reading = await ingest_reading(conn, payload)
     await hub.broadcast({"type": "reading", "data": reading})
     return reading
+
+
+@app.post("/api/fl/update")
+async def fl_update(
+    payload: FlUpdatePayload,
+    _: None = Depends(require_ingest_token),
+) -> dict:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            update = await ingest_fl_update(conn, payload)
+    await hub.broadcast({"type": "fl_update", "data": update})
+    return update
 
 
 @app.get("/api/overview")
