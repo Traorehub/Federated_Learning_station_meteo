@@ -1,0 +1,25 @@
+Campagne précédente (avant le 31 août 2026)
+Export PostgreSQL VPS — les tables readings / fl_updates n'ont PAS été vidées.
+Compteurs dashboard (packets_missing / packets_received) remis à zéro le 31/08/2026 ~17:49 UTC.
+
+Période : 24 août 17:28 UTC → 27 août 21:50 UTC
+Hors session du 31 août (reflash + agent relancé).
+
+--- Capteurs (readings) ---
+Nœud 1 : 995 paquets | RSSI moy −62,3 dBm (méd −64) | SNR +9,77 dB | 24,88 °C | 63,07 %
+Nœud 2 : 1082 paquets | RSSI moy −83,9 dBm (méd −98) | SNR +3,78 dB | 28,59 °C | 54,84 %
+Nœud 0 : 1 paquet illisible (bad_header), le 27 août.
+
+Par jour (heure de Paris) :
+24 août  n1 213  RSSI −53,3  SNR +9,77  (les deux nœuds encore proches)
+24 août  n2 308  RSSI −47,9  SNR +9,52
+27 août  n1 782  RSSI −64,8  SNR +9,77  24,35 °C / 62,17 %  ← témoin
+27 août  n2 774  RSSI −98,2  SNR +1,50  27,85 °C / 54,86 %  ← dégradé
+
+--- Poids (fl_updates), 27 août seulement ---
+Nœud 1 : 197 mises à jour | RSSI −63,7 | SNR +9,87 | w ≈ (0,612 ; 0,312 ; 0,016 ; 0,027)
+Nœud 2 : 195 mises à jour | RSSI −97,6 | SNR +1,48 | w ≈ (0,599 ; 0,048 ; 0,080 ; 0,153)
+
+Les w différents = chaque nœud apprend sur SON climat (non-IID). Pas encore de FedAvg.
+
+Fichiers : readings.csv, fl_updates.csv, resume_*.csv

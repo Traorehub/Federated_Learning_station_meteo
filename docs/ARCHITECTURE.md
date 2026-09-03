@@ -1,8 +1,8 @@
-# Architecture : POC 2 nœuds (étape 1)
+# Architecture : POC 2 nœuds
 
 ## Périmètre actuel
 
-**Dashboard v1** (comms) plus envoi des poids locaux. Pas encore d’agrégation FedAvg.
+**v1** : dashboard comms ([rapport](v1/V1_Rapport.md)). **v2** : poids locaux en LoRa ([rapport](v2/V2_Rapport.md)). **v3** : FedAvg ([rapport](v3/V3_Rapport.md), pas encore faite).
 
 ```
 ESP32 + DHT11 + RA-02  --LoRa 433 MHz-->  Arduino Uno + RA-02
@@ -37,10 +37,9 @@ La capture et l’entraînement ne sont pas simultanés. Ce n’est pas non plus
    - soit un critère local (assez de nouvelles données pour s’entraîner) ;
    - soit un signal du serveur (tous les nœuds s’entraînent maintenant).
 
-Cette étape 1 n’implémente que (1) : capter, envoyer, stocker, afficher.
-Les nœuds v2 ajoutent un tampon local et un entraînement SGD minuscule ;
-ils envoient les poids en LoRa. L’agrégation FedAvg serveur n’est pas encore
-codée.
+La v1 n’implémente que (1) : capter, envoyer, stocker, afficher.
+La v2 ajoute le tampon, le SGD local et l’envoi des poids en LoRa.
+L’agrégation FedAvg serveur (v3) n’est pas encore codée.
 
 ## Décision méthodologique : synchrone vs asynchrone
 
@@ -56,21 +55,20 @@ L’asynchrone est plus fidèle à la thèse finale (dans un FL vraiment
 décentralisé, les nœuds n’attendent pas un orchestrateur). Il viendra
 après, une fois la chaîne radio et le dashboard v1 stables.
 
-Cette décision est **documentée** pour la thèse ; elle n’est **pas encore
-codée**. La v1 ne contient ni `start round` ni agrégation.
+Cette décision est **documentée** pour la thèse. Le firmware écoute déjà un
+`start_round` ; l’agrégation serveur (v3) n’est pas encore là.
 
-## Dashboards : trois étapes distinctes
-
-Ces trois versions ne doivent pas être fusionnées.
+## Versions (ne pas fusionner les dashboards)
 
 | Version | Objectif | Statut |
 |---|---|---|
-| **v1** | Vérifier les communications : données brutes en direct (temp, hum, RSSI, SNR, seq, âge du dernier message) | **Cette étape** |
-| **v2** | Rounds, état des nœuds (attente / entraînement / mise à jour envoyée), précision et perte du modèle agrégé | Après v1 testée sur matériel |
-| **v3** | Métriques réseau et expérimentales à l’échelle : pertes, latence, RSSI dans le temps | Mise à l’échelle 15-20 nœuds |
+| **v1** | Communications : temp, hum, RSSI, SNR, seq, âge | **Faite** |
+| **v2** | Poids locaux sur LoRa, canal témoin / dégradé | **Faite** |
+| **v3** | FedAvg : moyenne + modèle global, UI rounds | **À faire** |
+| **v4** | Historique RSSI, latence, passage à l’échelle | Plus tard |
 
 Les métriques de liaison (RSSI, SNR, trous de séquence) remontent **dès la v1**
-pour ne pas refaire le schéma plus tard. Le dashboard v3 les historisera finement.
+pour ne pas refaire le schéma plus tard. La v4 les historisera finement.
 
 ## Ce que le serveur calcule déjà (v1)
 
@@ -84,7 +82,7 @@ Le serveur ne se limite pas au stockage :
 
 ## Hors périmètre (volontairement, pour l’instant)
 
-- Agrégation FedAvg sur le serveur
-- Dashboard v2 (rounds, loss / accuracy)
+- Agrégation FedAvg sur le serveur (v3)
+- Dashboard rounds / loss du modèle (v3)
 - MQTT
-- Dashboard v3
+- Dashboard v4

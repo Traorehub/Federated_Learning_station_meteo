@@ -12,7 +12,7 @@ RA-02 = SX1278, bande **433 MHz**. C’est le canal mesuré par le banc : RSSI, 
 | Spreading factor | **SF7** | Débit maximal, portée de laboratoire suffisante |
 | Bande passante | **125 kHz** | Valeur courante, proche de LoRaWAN |
 | Coding rate | **4/5** | Compromis redondance / débit |
-| TX power | **14 dBm** | Limite raisonnable, moins de brownout ESP32 |
+| TX power | S3 / Uno **14 dBm** ; WROOM **5 dBm** | Brownout du WROOM à 14 dBm en labo |
 | Sync word | **0x12** | Réseau privé (0x34 est le mot LoRaWAN public) |
 | Preamble | **8** | Défaut de la bibliothèque LoRa |
 | Intervalle d’envoi nœud | **15 s** | Dans la plage 10-30 s |

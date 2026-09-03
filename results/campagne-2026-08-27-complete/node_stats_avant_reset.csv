@@ -1,0 +1,4 @@
+node_id,last_seq,last_seen_at,last_rssi,last_snr,last_temperature,last_humidity,packets_received,packets_missing,packets_corrupt
+0,0,2026-08-31 17:48:57.375429+00,-164,0,,,3,0,3
+1,107,2026-08-31 17:48:30.872928+00,-76,9.25,25.4,73.6,1068,195648,0
+2,100,2026-08-31 17:48:43.804588+00,-102,-4.25,29.2,64,1136,130037,0

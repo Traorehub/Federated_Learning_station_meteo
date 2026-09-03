@@ -1,0 +1,24 @@
+Session 31 août 2026 (heure de Paris : 18:30 → 21:07, soit 2 h 37)
+Export PostgreSQL VPS. Les tables n'ont pas été vidées.
+
+Durée brute : 17:30:14 UTC → 20:07:45 UTC
+
+--- Capteurs ---
+Nœud 1 : 579 paquets | RSSI moy −68,7 dBm (méd −65, min −91, max −63) | SNR +9,52 dB | 24,75 °C | 76,0 % | 0 corrompu
+Nœud 2 : 515 paquets | RSSI moy −100,7 dBm (méd −101, min −106, max −98) | SNR −5,11 dB | 29,44 °C | 63,5 % | 0 corrompu
+Nœud 0 : 5 paquets illisibles (bad_header)
+
+Perte seq (brut, y compris le trou agent) :
+Nœud 1 : 52 / 631 = 8,2 %   (dont 44 d'un seul trou de 11 min)
+Nœud 2 : 116 / 631 = 18,4 % (dont 43 du même trou)
+
+Trou commun 17:48 → 17:59 UTC (~11 min, les DEUX nœuds) : agent / PC / VPS, pas la radio.
+Hors ce trou : nœud 1 ~1 % ; nœud 2 ~12 % (surtout des pertes d'1 paquet).
+
+Dashboard après reset : n1 manquants 51 ; n2 manquants 95 ; corrompus 0.
+
+--- Poids ---
+Nœud 1 : 147 | RSSI −67,7 | SNR +9,59 | w ≈ (0,612 ; 0,312 ; 0,018 ; 0,024)
+Nœud 2 : 131 | RSSI −100,1 | SNR −4,99 | w ≈ (0,610 ; 0,021 ; 0,099 ; 0,154)
+
+SNR nœud 2 < 0 sur 489 / 515 paquets (95 %).
