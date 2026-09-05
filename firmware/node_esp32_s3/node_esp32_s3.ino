@@ -7,7 +7,7 @@
  * DHT : capteur déjà soudé sur la carte d'extension, DATA GPIO 2.
  * SPI.begin(18, 16, 6, 5) obligatoire avant LoRa.begin.
  *
- * Capture 15 s (paquet v1) + tampon local + SGD + paquets de poids (v2).
+ * Capture 15 s (paquet v1) + tampon + SGD + poids (27 octets) + RX global.
  * TX 14 dBm : mieux placé comme nœud éloigné (30-40 m) que le WROOM à 5 dBm.
  *
  * Bibliothèques : LoRa (Sandeep Mistry), DHT sensor library (Adafruit).
@@ -86,7 +86,8 @@ static void sendWeights() {
   pkt_put_i32(&pkt[12], fl_to_fixed(model.w[1]));
   pkt_put_i32(&pkt[16], fl_to_fixed(model.w[2]));
   pkt_put_i32(&pkt[20], fl_to_fixed(model.w[3]));
-  pkt[24] = pkt_xor8(pkt, 24);
+  pkt_put_u16(&pkt[24], roundId);
+  pkt[26] = pkt_xor8(pkt, 26);
 
   LoRa.beginPacket();
   LoRa.write(pkt, PKT_WEIGHTS_LEN);
@@ -94,6 +95,8 @@ static void sendWeights() {
 
   Serial.print("TX weights id=");
   Serial.print(NODE_ID);
+  Serial.print(" round=");
+  Serial.print(roundId);
   Serial.print(" n=");
   Serial.print(model.n_trained);
   Serial.print(" w=");
@@ -106,28 +109,47 @@ static void sendWeights() {
   Serial.println(model.w[3], 4);
 }
 
-static void listenDownlink() {
-  LoRa.receive();
-  unsigned long t0 = millis();
-  while (millis() - t0 < RX_WINDOW_MS) {
-    int n = LoRa.parsePacket();
-    if (n < PKT_START_LEN) continue;
-    uint8_t buf[PKT_START_LEN];
-    int got = 0;
-    while (LoRa.available() && got < PKT_START_LEN) {
-      buf[got++] = (uint8_t)LoRa.read();
-    }
-    while (LoRa.available()) LoRa.read();
-    if (got != PKT_START_LEN) continue;
-    if (buf[0] != PKT_MAGIC || buf[1] != PKT_VERSION_FL || buf[2] != PKT_TYPE_START) {
-      continue;
-    }
-    if (pkt_xor8(buf, 7) != buf[7]) continue;
+static void pollDownlink() {
+  int n = LoRa.parsePacket();
+  if (n < PKT_START_LEN) return;
+  uint8_t buf[PKT_WEIGHTS_LEN];
+  int cap = n < (int)sizeof(buf) ? n : (int)sizeof(buf);
+  int got = 0;
+  while (LoRa.available() && got < cap) {
+    buf[got++] = (uint8_t)LoRa.read();
+  }
+  while (LoRa.available()) LoRa.read();
+  if (got < PKT_START_LEN) return;
+  if (buf[0] != PKT_MAGIC || buf[1] != PKT_VERSION_FL) return;
+
+  if (buf[2] == PKT_TYPE_START && got == PKT_START_LEN) {
+    if (pkt_xor8(buf, 7) != buf[7]) return;
     roundId = pkt_get_u16(&buf[4]);
     Serial.print("RX start_round ");
     Serial.println(roundId);
     fl_train(&model);
     sendWeights();
+    LoRa.receive();
+  } else if (buf[2] == PKT_TYPE_GLOBAL && got == PKT_GLOBAL_LEN) {
+    if (pkt_xor8(buf, 24) != buf[24]) return;
+    roundId = pkt_get_u16(&buf[4]);
+    fl_apply_w(
+      &model,
+      fl_from_fixed(pkt_get_i32(&buf[8])),
+      fl_from_fixed(pkt_get_i32(&buf[12])),
+      fl_from_fixed(pkt_get_i32(&buf[16])),
+      fl_from_fixed(pkt_get_i32(&buf[20]))
+    );
+    Serial.print("RX global round=");
+    Serial.print(roundId);
+    Serial.print(" w=");
+    Serial.print(model.w[0], 4);
+    Serial.print(",");
+    Serial.print(model.w[1], 4);
+    Serial.print(",");
+    Serial.print(model.w[2], 4);
+    Serial.print(",");
+    Serial.println(model.w[3], 4);
   }
 }
 
@@ -148,9 +170,12 @@ void setup() {
   }
   configureRadio();
   Serial.println("LoRa OK 433MHz SF7 BW125 CR4/5 TXdbm=14");
+  LoRa.receive();
 }
 
 void loop() {
+  pollDownlink();
+
   unsigned long now = millis();
   if (now - lastSend < SEND_INTERVAL_MS) return;
   lastSend = now;
@@ -159,6 +184,7 @@ void loop() {
   float h = dht.readHumidity();
   if (isnan(t) || isnan(h)) {
     Serial.println("DHT read failed, skip");
+    LoRa.receive();
     return;
   }
 
@@ -183,5 +209,5 @@ void loop() {
     sinceWeights = 0;
   }
 
-  listenDownlink();
+  LoRa.receive();
 }

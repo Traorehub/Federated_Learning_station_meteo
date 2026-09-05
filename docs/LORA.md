@@ -65,19 +65,22 @@ pas comme un trou de séquence d’un nœud.
 
 Le paquet capteur v1 (14 octets, version `0x01`) **ne change pas**.
 
-En plus, toutes les 4 mesures, le nœud envoie 25 octets (version `0x02`,
-type `0x20`) : les 4 coefficients du modèle linéaire (T[t] prédite à partir
-de T[t-1], T[t-2], H[t-1]). La gateway y ajoute aussi RSSI / SNR, et l’agent
-poste `POST /api/fl/update`. L’agrégation FedAvg n’est pas encore faite
-côté serveur.
+En plus, toutes les 4 mesures, le nœud envoie les 4 coefficients
+(T[t] prédite à partir de T[t-1], T[t-2], H[t-1]). Firmware v3 : **27 octets**
+(version `0x02`, type `0x20`, `round_id` aux offsets 24-25). La gateway
+accepte encore **25 octets** (v2, `round_id` = 0). Elle y ajoute RSSI / SNR ;
+l’agent poste `POST /api/fl/update`.
 
-Émission gateway (optionnel, ligne USB) :
+Commandes USB vers la gateway :
 
 ```text
 {"cmd":"start_round","round":1}
+G 1 600000 300000 0 0
 ```
 
-Les nœuds écoutent 400 ms après chaque TX capteur.
+`G` : modèle global, virgule fixe int32 (\(10^6\)). L’agent retransmet chaque
+commande toutes les ~2,5 s ; les nœuds écoutent en continu (la fenêtre de
+400 ms de la v2 laissait passer le signal). Détail FedAvg : [v3](v3/V3_Rapport.md).
 
 ## Ce que la gateway ajoute
 

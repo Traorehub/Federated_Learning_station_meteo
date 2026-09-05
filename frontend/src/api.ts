@@ -1,8 +1,21 @@
-import type { Overview, Reading } from './types'
+import type { FlRound, Overview, Reading } from './types'
 
 export async function fetchOverview(): Promise<Overview> {
   const res = await fetch('/api/overview')
   if (!res.ok) throw new Error(`overview ${res.status}`)
+  return res.json()
+}
+
+export async function fetchRounds(): Promise<FlRound[]> {
+  const res = await fetch('/api/fl/rounds')
+  if (!res.ok) throw new Error(`rounds ${res.status}`)
+  const data: { rounds: FlRound[] } = await res.json()
+  return data.rounds ?? []
+}
+
+export async function startRound(): Promise<FlRound> {
+  const res = await fetch('/api/fl/rounds', { method: 'POST' })
+  if (!res.ok) throw new Error(`start ${res.status}`)
   return res.json()
 }
 

@@ -1,11 +1,13 @@
 /*
  * Gateway LoRa : Arduino Uno + RA-02 (SX1278 433 MHz)
  *
- * Reçoit les paquets capteur (14 octets, v1) et les paquets de poids (v2).
- * Mesure RSSI/SNR à la réception (puce SX1278), une ligne JSON sur USB.
+ * Reçoit les paquets capteur (14 octets) et les paquets de poids
+ * (25 octets v2 ou 27 octets v3 avec round_id). RSSI/SNR à la réception.
  *
- * Commande PC (une ligne) : {"cmd":"start_round","round":1}
- * → émission LoRa start_round vers les nœuds.
+ * Commandes PC (une ligne) :
+ *   {"cmd":"start_round","round":1}
+ *   G <round> <w0> <w1> <w2> <w3>     (virgule fixe int32, 1e6)
+ * → émission LoRa start_round (0x10) ou modèle global (0x30).
  *
  * ATTENTION : RA-02 = 3.3 V. Convertisseur de niveaux obligatoire avec l'Uno 5 V.
  */
@@ -26,6 +28,8 @@
 #define LORA_CR            5
 #define LORA_SYNC          0x12
 #define LORA_TX_POWER      14
+
+static unsigned long txQuietUntil = 0;
 
 static void configureRadio() {
   LoRa.setSpreadingFactor(LORA_SF);
@@ -74,7 +78,9 @@ static void emitSensor(const uint8_t *buf, int n) {
 static void emitWeights(const uint8_t *buf, int n) {
   int rssi = LoRa.packetRssi();
   float snr = LoRa.packetSnr();
-  if (n != PKT_WEIGHTS_LEN || buf[0] != PKT_MAGIC || buf[1] != PKT_VERSION_FL
+  bool v3 = (n == PKT_WEIGHTS_LEN);
+  bool v2 = (n == PKT_WEIGHTS_LEN_V2);
+  if ((!v3 && !v2) || buf[0] != PKT_MAGIC || buf[1] != PKT_VERSION_FL
       || buf[2] != PKT_TYPE_WEIGHTS) {
     Serial.print("{\"ok\":false,\"error\":\"bad_header\",\"len\":");
     Serial.print(n);
@@ -85,13 +91,17 @@ static void emitWeights(const uint8_t *buf, int n) {
     Serial.println("}");
     return;
   }
-  bool ok = (pkt_xor8(buf, 24) == buf[24]);
+  uint8_t xorOff = v3 ? 26 : 24;
+  bool ok = (pkt_xor8(buf, xorOff) == buf[xorOff]);
+  uint16_t roundId = v3 ? pkt_get_u16(&buf[24]) : 0;
   Serial.print("{\"type\":\"weights\",\"node_id\":");
   Serial.print(buf[3]);
   Serial.print(",\"seq\":");
   Serial.print(pkt_get_u16(&buf[4]));
   Serial.print(",\"n_samples\":");
   Serial.print(pkt_get_u16(&buf[6]));
+  Serial.print(",\"round_id\":");
+  Serial.print(roundId);
   Serial.print(",\"w\":[");
   Serial.print(pkt_get_i32(&buf[8]) / 1000000.0f, 6);
   Serial.print(",");
@@ -122,15 +132,54 @@ static void sendStartRound(uint16_t roundId) {
   LoRa.beginPacket();
   LoRa.write(pkt, PKT_START_LEN);
   LoRa.endPacket();
+  delay(20);
   LoRa.receive();
+  txQuietUntil = millis() + 80;
 
   Serial.print("{\"type\":\"start_round_tx\",\"round\":");
   Serial.print(roundId);
   Serial.println("}");
 }
 
+static void sendGlobal(uint16_t roundId, int32_t w0, int32_t w1, int32_t w2, int32_t w3) {
+  uint8_t pkt[PKT_GLOBAL_LEN];
+  pkt[0] = PKT_MAGIC;
+  pkt[1] = PKT_VERSION_FL;
+  pkt[2] = PKT_TYPE_GLOBAL;
+  pkt[3] = 0;
+  pkt_put_u16(&pkt[4], roundId);
+  pkt[6] = 0;
+  pkt[7] = 0;
+  pkt_put_i32(&pkt[8], w0);
+  pkt_put_i32(&pkt[12], w1);
+  pkt_put_i32(&pkt[16], w2);
+  pkt_put_i32(&pkt[20], w3);
+  pkt[24] = pkt_xor8(pkt, 24);
+
+  LoRa.beginPacket();
+  LoRa.write(pkt, PKT_GLOBAL_LEN);
+  LoRa.endPacket();
+  delay(20);
+  LoRa.receive();
+  txQuietUntil = millis() + 80;
+
+  Serial.print("{\"type\":\"global_tx\",\"round\":");
+  Serial.print(roundId);
+  Serial.println("}");
+}
+
+static int32_t nextI32(char **pp) {
+  char *p = *pp;
+  while (*p == ' ' || *p == '\t') p++;
+  int32_t v = (int32_t)atol(p);
+  if (*p == '-' || *p == '+') p++;
+  while (*p >= '0' && *p <= '9') p++;
+  *pp = p;
+  return v;
+}
+
 static void pollSerialCmd() {
-  static char line[48];
+  static char line[96];
   static uint8_t len = 0;
   while (Serial.available()) {
     char c = (char)Serial.read();
@@ -138,14 +187,28 @@ static void pollSerialCmd() {
       if (len == 0) continue;
       line[len] = 0;
       len = 0;
+      if (line[0] == 'G' && (line[1] == ' ' || line[1] == '\t')) {
+        char *p = line + 1;
+        while (*p == ' ' || *p == '\t') p++;
+        uint16_t roundId = (uint16_t)atoi(p);
+        if (*p == '-' || *p == '+') p++;
+        while (*p >= '0' && *p <= '9') p++;
+        int32_t w0 = nextI32(&p);
+        int32_t w1 = nextI32(&p);
+        int32_t w2 = nextI32(&p);
+        int32_t w3 = nextI32(&p);
+        sendGlobal(roundId, w0, w1, w2, w3);
+        return;
+      }
       if (strstr(line, "start_round") == NULL) continue;
       uint16_t roundId = 1;
-      char *p = strstr(line, "round");
-      if (p) {
-        while (*p && (*p < '0' || *p > '9')) p++;
-        if (*p) roundId = (uint16_t)atoi(p);
+      char *rp = strstr(line, "round");
+      if (rp) {
+        while (*rp && (*rp < '0' || *rp > '9')) rp++;
+        if (*rp) roundId = (uint16_t)atoi(rp);
       }
       sendStartRound(roundId);
+      return;
     } else if (len < sizeof(line) - 1) {
       line[len++] = c;
     } else {
@@ -170,6 +233,7 @@ void setup() {
 
 void loop() {
   pollSerialCmd();
+  if ((long)(millis() - txQuietUntil) < 0) return;
 
   int packetSize = LoRa.parsePacket();
   if (packetSize <= 0) return;
@@ -182,9 +246,12 @@ void loop() {
   }
   while (LoRa.available()) LoRa.read();
 
-  if (n >= 2 && buf[1] == PKT_VERSION_FL && n >= 3 && buf[2] == PKT_TYPE_WEIGHTS) {
+  if (n >= 3 && buf[1] == PKT_VERSION_FL && buf[2] == PKT_TYPE_WEIGHTS) {
     emitWeights(buf, n);
-  } else {
+  } else if (n >= 3 && buf[1] == PKT_VERSION_FL
+             && (buf[2] == PKT_TYPE_GLOBAL || buf[2] == PKT_TYPE_START)) {
+    /* downlink echo : ignorer */
+  } else if (n == PKT_SENSOR_LEN) {
     emitSensor(buf, n);
   }
 }

@@ -9,9 +9,9 @@ Ce n’est ni « capter et entraîner en même temps », ni « tout stocker puis
 1. Le nœud capte en continu, toutes les 15 s, tampon circulaire de 32 échantillons (`FL_BUF`). Indépendant de tout round serveur.
 2. À chaque nouvelle mesure : une passe SGD locale sur le tampon (`fl_train`).
 3. Toutes les `WEIGHT_EVERY` (4) mesures, si au moins 3 échantillons : envoi du paquet poids (25 octets).
-4. L’agrégation fédérée n’a lieu que lorsqu’un round est **clos côté serveur**. Ce n’est pas encore le cas.
+4. L’agrégation fédérée a lieu lorsqu’un round est **clos côté serveur** (v3).
 
-POC prévu : FedAvg **synchrone** (signal `start_round`). L’asynchrone (chaque nœud selon sa radio) est plus réaliste en LoRa ; il vient après la v3 sync. Les nœuds écoutent déjà 400 ms après chaque TX capteur. La gateway accepte une ligne USB `{"cmd":"start_round","round":1}` et émet un paquet type `0x10`. Personne ne clôt encore un round ni ne calcule \(w_{\text{global}}\).
+FedAvg **synchrone** (signal `start_round`). L’asynchrone (chaque nœud selon sa radio) est plus réaliste en LoRa ; il vient après le sync. En v2, les nœuds n’écoutent que 400 ms après chaque TX capteur : cette fenêtre s’est révélée trop courte pour capter le signal de round, et la v3 est passée à une **écoute continue**. La v3 clôt le round, calcule \(w_{\text{global}}\) et le renvoie (type `0x30`). Les paquets poids **25 octets** restent acceptés par la gateway ; le firmware v3 envoie **27 octets** (`round_id` aux offsets 24-25).
 
 ## Modèle embarqué
 
@@ -165,7 +165,7 @@ firmware/common/fl_model.h
 firmware/common/fl_pkt.h
 firmware/node_esp32/          (copies locales pour Arduino)
 firmware/node_esp32_s3/
-firmware/gateway_uno/         parse capteur + poids, start_round TX
+firmware/gateway_uno/         parse 14 / 25 / 27 o, start_round + G TX
 agent/serial_bridge.py        route type weights -> /api/fl/update
 backend/app/fl_ingest.py
 database/schema.sql           table fl_updates
@@ -175,4 +175,4 @@ Le dashboard v1 n’affiche pas les rounds ni les \(w\). Les poids sont en base 
 
 ## Ce que la v2 a montré
 
-Un client sain et un client en bord de couverture coexistent. Un SNR négatif reste souvent décodable. Quatre poids passent en 25 octets sur le même canal que les DHT. Les \(w\) divergent avec le microclimat. FedAvg n’a pas encore eu lieu : personne n’a moyenné, personne n’a renvoyé un modèle global.
+Un client sain et un client en bord de couverture coexistent. Un SNR négatif reste souvent décodable. Quatre poids passent en 25 octets (v2) puis 27 octets (v3, `round_id`) sur le même canal que les DHT. Les \(w\) divergent avec le microclimat. L’agrégation et le downlink sont décrits dans [v3](../v3/V3_Rapport.md).

@@ -85,4 +85,15 @@ static int32_t fl_to_fixed(float x) {
   return (int32_t)lroundf(x * FL_FIXED);
 }
 
+static float fl_from_fixed(int32_t x) {
+  return ((float)x) / FL_FIXED;
+}
+
+static void fl_apply_w(FlModel *m, float w0, float w1, float w2, float w3) {
+  m->w[0] = w0;
+  m->w[1] = w1;
+  m->w[2] = w2;
+  m->w[3] = w3;
+}
+
 #endif

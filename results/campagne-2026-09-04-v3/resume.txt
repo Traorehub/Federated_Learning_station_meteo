@@ -1,0 +1,30 @@
+Campagne FedAvg v3 — 4 septembre 2026
+Export PostgreSQL VPS. Tables non vidées.
+
+Fenêtre des 19 rounds : 21:03:38 UTC → 22:37:18 UTC (timeout 90 s).
+Placement : nœud 1 WROOM ~2 m (5 dBm) ; nœud 2 S3 autre pièce (14 dBm).
+Radio : 433 MHz SF7 BW 125 kHz CR 4/5.
+
+--- Rounds ---
+19 clos : 12 avec 2 nœuds, 6 avec 1 nœud, 1 vide (round 3, debug).
+Rounds 1-5 : mise au point (écoute downlink ; round 4 S3 encore proche, RSSI ~ −55 dBm).
+Rounds utiles témoin / dégradé : à partir du round 6.
+
+2 nœuds, S3 loin (RSSI −105…−109 dBm, SNR négatif) : rounds 6-9, 12-13, 15-19.
+  w_global s'intercale entre les deux w locaux (écart w1 ~ 0,007 à 0,011).
+  Durée ~42-77 s (souvent ~50 s), avant le timeout.
+
+1 nœud (timeout 90 s), global = WROOM seul : rounds 10, 11, 14.
+  Round 10 : updates S3 après closed_at (stockés, hors moyenne).
+
+--- Updates ---
+749 lignes fl_updates, dont 677 périodiques (round_id = 0).
+
+--- node_stats (ne pas citer comme perte radio) ---
+Nœud 1 : 754 reçus, missing ~130437 (wrap seq après reflashes)
+Nœud 2 : 662 reçus, missing ~130546
+Nœud 0 : 51 bad_header
+T / H fin de session : n1 25,4 °C / 85 % ; n2 29,5 °C / 71 %
+RSSI/SNR fin : n1 −83 / +9,5 ; n2 −106 / −8,75
+
+Pertes LoRa (hors wrap, hors trou PC) : campagnes v2 du 27 et 31 août.

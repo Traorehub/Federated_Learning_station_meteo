@@ -2,7 +2,7 @@
 
 ## Périmètre actuel
 
-**v1** : dashboard comms ([rapport](v1/V1_Rapport.md)). **v2** : poids locaux en LoRa ([rapport](v2/V2_Rapport.md)). **v3** : FedAvg ([rapport](v3/V3_Rapport.md), pas encore faite).
+**v1** : dashboard comms ([rapport](v1/V1_Rapport.md)). **v2** : poids locaux en LoRa ([rapport](v2/V2_Rapport.md)). **v3** : FedAvg ([rapport](v3/V3_Rapport.md)).
 
 ```
 ESP32 + DHT11 + RA-02  --LoRa 433 MHz-->  Arduino Uno + RA-02
@@ -39,7 +39,7 @@ La capture et l’entraînement ne sont pas simultanés. Ce n’est pas non plus
 
 La v1 n’implémente que (1) : capter, envoyer, stocker, afficher.
 La v2 ajoute le tampon, le SGD local et l’envoi des poids en LoRa.
-L’agrégation FedAvg serveur (v3) n’est pas encore codée.
+La v3 agrège (FedAvg) et renvoie \(w_{\text{global}}\) en downlink LoRa.
 
 ## Décision méthodologique : synchrone vs asynchrone
 
@@ -55,8 +55,7 @@ L’asynchrone est plus fidèle à la thèse finale (dans un FL vraiment
 décentralisé, les nœuds n’attendent pas un orchestrateur). Il viendra
 après, une fois la chaîne radio et le dashboard v1 stables.
 
-Cette décision est **documentée** pour la thèse. Le firmware écoute déjà un
-`start_round` ; l’agrégation serveur (v3) n’est pas encore là.
+Cette décision est **documentée** pour la thèse. Le firmware écoute `start_round` et le modèle global ; le serveur clôt le round et calcule \(w_{\text{global}}\).
 
 ## Versions (ne pas fusionner les dashboards)
 
@@ -64,7 +63,7 @@ Cette décision est **documentée** pour la thèse. Le firmware écoute déjà u
 |---|---|---|
 | **v1** | Communications : temp, hum, RSSI, SNR, seq, âge | **Faite** |
 | **v2** | Poids locaux sur LoRa, canal témoin / dégradé | **Faite** |
-| **v3** | FedAvg : moyenne + modèle global, UI rounds | **À faire** |
+| **v3** | FedAvg : moyenne + modèle global, UI rounds | **Faite** (campagne 4 sept. 2026) |
 | **v4** | Historique RSSI, latence, passage à l’échelle | Plus tard |
 
 Les métriques de liaison (RSSI, SNR, trous de séquence) remontent **dès la v1**
@@ -82,7 +81,7 @@ Le serveur ne se limite pas au stockage :
 
 ## Hors périmètre (volontairement, pour l’instant)
 
-- Agrégation FedAvg sur le serveur (v3)
-- Dashboard rounds / loss du modèle (v3)
+- Agrégation FedAvg asynchrone
+- Dashboard v4 (historique RSSI fin, latence)
 - MQTT
-- Dashboard v4
+- Dashboard rounds fusionné avec les cartes radio v1

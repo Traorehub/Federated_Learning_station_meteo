@@ -1,10 +1,35 @@
+import { useEffect, useState } from 'react'
 import { NodeCard } from './components/NodeCard'
 import { PacketLog } from './components/PacketLog'
+import { RoundsView } from './components/RoundsView'
+import { ViewNav } from './components/ViewNav'
 import { useLiveData } from './hooks/useLiveData'
 
 const PLACEHOLDERS = [{ node_id: 1 }, { node_id: 2 }] as const
 
+function viewFromHash(hash: string): 'radio' | 'rounds' {
+  return hash === '#rounds' ? 'rounds' : 'radio'
+}
+
 export default function App() {
+  const [view, setView] = useState<'radio' | 'rounds'>(() =>
+    viewFromHash(window.location.hash),
+  )
+
+  useEffect(() => {
+    const onHash = () => setView(viewFromHash(window.location.hash))
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  if (view === 'rounds') {
+    return <RoundsView />
+  }
+
+  return <RadioView />
+}
+
+function RadioView() {
   const { data, error, live, now } = useLiveData()
   const known = data?.nodes ?? []
   const cards = PLACEHOLDERS.map((ph) => known.find((n) => n.node_id === ph.node_id) ?? {
@@ -34,6 +59,7 @@ export default function App() {
           </p>
         </div>
         <div className="status">
+          <ViewNav current="radio" />
           <span className={`pill ${live ? 'ok' : 'warn'}`}>
             <i />
             {live ? 'live' : 'polling'}

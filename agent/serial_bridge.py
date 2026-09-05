@@ -1,4 +1,11 @@
-"""Lit le JSON ligne à ligne de la gateway Arduino et POST /api/ingest ou /api/fl/update."""
+"""Lit le JSON ligne à ligne de la gateway Arduino et POST /api/ingest ou /api/fl/update.
+
+Sur timeout série, poll GET /api/fl/commands (token ingest) et écrit :
+  {"cmd":"start_round","round":N}
+  G <round> <i32> <i32> <i32> <i32>   (virgule fixe 1e6, pas de float pour l'Uno)
+Retransmet les commandes non expirées toutes les ~2,5 s (pas 400 ms :
+sinon la gateway n'écoute plus et s'entend elle-même en bad_header).
+"""
 
 from __future__ import annotations
 
@@ -15,6 +22,10 @@ from dotenv import load_dotenv
 from serial.tools import list_ports
 
 load_dotenv()
+
+RETRANSMIT_S = 2.5
+PIGGYBACK_MIN_S = 1.0
+FIXED = 1_000_000.0
 
 
 def detect_port(preferred: str | None) -> str:
@@ -41,9 +52,72 @@ def post_json(url: str, token: str, path: str, payload: dict) -> None:
     r.raise_for_status()
 
 
+def fetch_commands(url: str, token: str) -> list[dict]:
+    r = requests.get(
+        f"{url.rstrip('/')}/api/fl/commands",
+        headers={"X-Ingest-Token": token},
+        timeout=10,
+    )
+    r.raise_for_status()
+    data = r.json()
+    cmds = data.get("commands") if isinstance(data, dict) else data
+    if not isinstance(cmds, list):
+        return []
+    return cmds
+
+
+def write_command(ser: serial.Serial, cmd: dict) -> None:
+    name = cmd.get("cmd")
+    round_id = int(cmd.get("round_id") or 0)
+    if name == "start_round":
+        line = json.dumps({"cmd": "start_round", "round": round_id}, separators=(",", ":"))
+        ser.write((line + "\n").encode("ascii"))
+        print(f"TX USB start_round round={round_id}")
+    elif name == "global_model":
+        w = cmd.get("w")
+        if not isinstance(w, list) or len(w) != 4:
+            return
+        fixed = [int(round(float(x) * FIXED)) for x in w]
+        line = f"G {round_id} {fixed[0]} {fixed[1]} {fixed[2]} {fixed[3]}\n"
+        ser.write(line.encode("ascii"))
+        print(f"TX USB global round={round_id} {line.strip()}")
+    else:
+        return
+    ser.flush()
+
+
+def flush_commands(
+    ser: serial.Serial,
+    url: str,
+    token: str,
+    last_sent: dict[int, float],
+    force: bool = False,
+) -> None:
+    try:
+        cmds = fetch_commands(url, token)
+    except requests.RequestException as exc:
+        print(f"GET commands échoué : {exc}", file=sys.stderr)
+        return
+    pending = {int(c["id"]) for c in cmds if "id" in c}
+    for key in list(last_sent):
+        if key not in pending:
+            del last_sent[key]
+    now = time.monotonic()
+    gap = PIGGYBACK_MIN_S if force else RETRANSMIT_S
+    for cmd in cmds:
+        cid = int(cmd.get("id") or 0)
+        if cid < 1:
+            continue
+        if now - last_sent.get(cid, 0.0) < gap:
+            continue
+        write_command(ser, cmd)
+        last_sent[cid] = now
+        return
+
+
 def route_message(msg: dict) -> tuple[str, dict] | None:
     now = datetime.now(timezone.utc).isoformat()
-    if msg.get("status") or msg.get("type") == "start_round_tx":
+    if msg.get("status") or msg.get("type") in ("start_round_tx", "global_tx"):
         return None
     if msg.get("type") == "weights":
         w = msg.get("w")
@@ -110,13 +184,16 @@ def main() -> None:
     port = detect_port(args.port)
     print(f"Série {port} @ {args.baud} → {args.url}")
 
+    last_sent: dict[int, float] = {}
+
     while True:
         try:
-            with serial.Serial(port, args.baud, timeout=1) as ser:
+            with serial.Serial(port, args.baud, timeout=0.5) as ser:
                 print("Gateway ouverte.")
                 while True:
                     raw = ser.readline()
                     if not raw:
+                        flush_commands(ser, args.url, args.token, last_sent)
                         continue
                     line = raw.decode("utf-8", errors="replace").strip()
                     if not line:
@@ -134,6 +211,9 @@ def main() -> None:
                         post_json(args.url, args.token, path, payload)
                     except requests.RequestException as exc:
                         print(f"POST échoué : {exc}", file=sys.stderr)
+                    else:
+                        if path == "/api/ingest" and payload.get("ok") and payload.get("node_id"):
+                            flush_commands(ser, args.url, args.token, last_sent, force=True)
         except serial.SerialException as exc:
             print(f"Série perdue ({exc}), retry dans 2 s", file=sys.stderr)
             time.sleep(2)

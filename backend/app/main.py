@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .db import connect, close, get_pool, record_to_dict
 from .fl_ingest import FlUpdatePayload, ingest_fl_update
+from .fl_rounds import list_rounds, on_weight_update, pending_commands, start_round
 from .ingest import IngestPayload, ingest_reading
 from .seq import loss_rate
 from .ws import hub
@@ -60,6 +61,32 @@ CREATE TABLE IF NOT EXISTS fl_updates (
     received_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_fl_updates_node_time ON fl_updates (node_id, received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fl_updates_round ON fl_updates (round_id, node_id, received_at DESC);
+CREATE TABLE IF NOT EXISTS fl_rounds (
+    id              SERIAL PRIMARY KEY,
+    status          TEXT NOT NULL DEFAULT 'open',
+    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    closed_at       TIMESTAMPTZ,
+    timeout_s       INTEGER NOT NULL DEFAULT 90,
+    w0              REAL,
+    w1              REAL,
+    w2              REAL,
+    w3              REAL,
+    n_total         INTEGER,
+    n_nodes         INTEGER
+);
+CREATE TABLE IF NOT EXISTS fl_commands (
+    id              SERIAL PRIMARY KEY,
+    cmd             TEXT NOT NULL,
+    round_id        INTEGER NOT NULL,
+    w0              REAL,
+    w1              REAL,
+    w2              REAL,
+    w3              REAL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    acked_at        TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_fl_commands_open ON fl_commands (acked_at, created_at);
 """
 
 
@@ -87,8 +114,8 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Federated Learning IoT v1",
-    description="Réception LoRa brute. Pas d'entraînement ni d'agrégation.",
+    title="Federated Learning IoT",
+    description="LoRa v1, poids locaux v2, FedAvg v3.",
     lifespan=lifespan,
 )
 
@@ -115,7 +142,7 @@ def enrich_stats(row: dict) -> dict:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"ok": True, "stage": "v1", "fl": True, "fl_agg": False}
+    return {"ok": True, "stage": "v1", "fl": True, "fl_agg": True}
 
 
 @app.post("/api/ingest")
@@ -137,11 +164,43 @@ async def fl_update(
     _: None = Depends(require_ingest_token),
 ) -> dict:
     pool = get_pool()
+    closed = None
     async with pool.acquire() as conn:
         async with conn.transaction():
             update = await ingest_fl_update(conn, payload)
+            if payload.round_id > 0:
+                closed = await on_weight_update(conn, payload.round_id)
     await hub.broadcast({"type": "fl_update", "data": update})
+    if closed is not None:
+        await hub.broadcast({"type": "fl_round", "data": closed})
     return update
+
+
+@app.post("/api/fl/rounds")
+async def api_start_round(
+    timeout_s: int = Query(default=90, ge=30, le=300),
+) -> dict:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await start_round(conn, timeout_s)
+    await hub.broadcast({"type": "fl_round", "data": row})
+    return row
+
+
+@app.get("/api/fl/rounds")
+async def api_list_rounds(limit: int = Query(default=20, ge=1, le=100)) -> dict:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rounds = await list_rounds(conn, limit)
+    return {"rounds": rounds}
+
+
+@app.get("/api/fl/commands")
+async def api_commands(_: None = Depends(require_ingest_token)) -> dict:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        commands = await pending_commands(conn)
+    return {"commands": commands}
 
 
 @app.get("/api/overview")

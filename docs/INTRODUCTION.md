@@ -37,8 +37,8 @@ Questions, du plus immédiat au plus loin :
 | Un nœud « bon lien » et un nœud « bord de couverture » coexistent-ils ? | v2 | Oui. Témoin ~ −70 dBm / SNR +10 dB ; loin ~ −100 dBm / SNR souvent négatif, encore décodable. |
 | Les modèles locaux divergent-ils (non i.i.d.) ? | v2 | Oui. Autre pièce, autre climat, \(w\) différents (ex. \(w_1\) ~ 0,31 vs ~ 0,02). |
 | Quelle part des « pertes » est radio, quelle part est le PC / l’agent ? | v2 | Un trou **simultané** des deux nœuds n’est pas LoRa. Un ~99 % dashboard après flash est un wrap de `seq`, pas le canal. Hors trou PC : ~1 % près, ~12 % loin. |
-| FedAvg sous ces pertes : le modèle global reste-t-il utilisable si le nœud 2 timeout ? | v3 | Pas encore mesuré. Agrégation non codée. |
-| Sync vs async, plus de nœuds, historique RSSI | v3 puis v4 | Plus tard. |
+| FedAvg sous ces pertes : le modèle global reste-t-il utilisable si le nœud 2 timeout ? | v3 | Oui. 4 sept. 2026 : 12 rounds à 2 nœuds (\(w_{\text{global}}\) entre les deux \(w\)) ; timeout (10, 11, 14) = témoin seul. |
+| Perte / précision du modèle, RSSI/latence dans le temps, async, plus de nœuds | v4 | Plus tard. |
 
 Ce qu’on **ne** cherche pas ici : un thermomètre cloud, un réseau LoRaWAN opérateur, un réseau de neurones profond sur ESP32, une démo SaaS 24/7.
 
@@ -50,7 +50,7 @@ Ce qu’on **ne** cherche pas ici : un thermomètre cloud, un réseau LoRaWAN op
 |--------|------|-----|
 | Physique | Capteurs, MCU, alim, fils | DHT11, ESP32 WROOM + S3, RA-02, Uno, shifter 5 V / 3,3 V |
 | Communication | Transport objet → labo | LoRa 433 MHz SF7, USB 115200 JSON, HTTP POST |
-| Plateforme | Stockage | FastAPI, PostgreSQL (`readings`, `node_stats`, `fl_updates`) |
+| Plateforme | Stockage | FastAPI, PostgreSQL (`readings`, `node_stats`, `fl_updates`, `fl_rounds`) |
 | Application | Preuve que ça marche | Dashboard React, WebSocket |
 
 ### Pourquoi pas le Wi-Fi des ESP32
@@ -66,7 +66,7 @@ On ne recule pas le nœud 1 pour égaliser les RSSI. Le proche est le contrôle 
 
 ### Apprentissage (cible)
 
-Capture DHT toutes les 15 s, tampon local. Entraînement par **round**, pas en continu et pas « tout capter puis un seul fit ». FedAvg synchrone pour le POC (signal `start_round`). Formule et travail restant : [rapport v3](v3/V3_Rapport.md).
+Capture DHT toutes les 15 s, tampon local. Entraînement par **round**, pas en continu et pas « tout capter puis un seul fit ». FedAvg synchrone pour le POC (signal `start_round`). Détail : [rapport v3](v3/V3_Rapport.md).
 
 Les dashboards ne se fusionnent pas : v1 = radio, v3 = rounds et modèle, v4 = métriques d’échelle.
 
@@ -76,10 +76,10 @@ Les dashboards ne se fusionnent pas : v1 = radio, v3 = rounds et modèle, v4 = m
 |---------|------|--------|
 | v1 | Chaîne comms | Faite. [Rapport](v1/V1_Rapport.md) |
 | v2 | SGD local + poids LoRa + campagnes témoin/dégradé | Faite. [Rapport](v2/V2_Rapport.md) |
-| v3 | Moyenne FedAvg + renvoi de \(w_{\text{global}}\) | À faire. [Rapport](v3/V3_Rapport.md) |
+| v3 | Moyenne FedAvg + renvoi de \(w_{\text{global}}\) | Faite. Campagne 4 sept. 2026. [Rapport](v3/V3_Rapport.md) |
 | v4 | Historique RSSI, latence, plus de nœuds | Plus tard |
 
-Chaque version s’appuie sur la précédente. Flasher aujourd’hui installe la v2 (poids), pas la v3.
+Chaque version s’appuie sur la précédente. Flasher aujourd’hui installe la v3 (poids 27 octets + RX du modèle global). Relancer l’agent et reconstruire Docker.
 
 ## Où lire la suite
 
@@ -88,7 +88,7 @@ Chaque version s’appuie sur la précédente. Flasher aujourd’hui installe la
 | [README](../README.md) | Hub : démo, table des versions, lancement |
 | [v1](v1/V1_Rapport.md) | Câblage, paquet 14 o, RSSI, agent, `seq` |
 | [v2](v2/V2_Rapport.md) | Modèle 4 poids, campagnes, artefacts de perte |
-| [v3](v3/V3_Rapport.md) | FedAvg, ce qui reste à coder |
+| [v3](v3/V3_Rapport.md) | FedAvg, paquets, API, UI `#rounds` |
 | [HARDWARE.md](HARDWARE.md) | Broches et couleurs |
 | [LORA.md](LORA.md) | Format radio |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Sync/async, périmètre |

@@ -57,3 +57,35 @@ CREATE TABLE IF NOT EXISTS fl_updates (
 
 CREATE INDEX IF NOT EXISTS idx_fl_updates_node_time
     ON fl_updates (node_id, received_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_fl_updates_round
+    ON fl_updates (round_id, node_id, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS fl_rounds (
+    id              SERIAL PRIMARY KEY,
+    status          TEXT NOT NULL DEFAULT 'open',
+    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    closed_at       TIMESTAMPTZ,
+    timeout_s       INTEGER NOT NULL DEFAULT 90,
+    w0              REAL,
+    w1              REAL,
+    w2              REAL,
+    w3              REAL,
+    n_total         INTEGER,
+    n_nodes         INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS fl_commands (
+    id              SERIAL PRIMARY KEY,
+    cmd             TEXT NOT NULL,
+    round_id        INTEGER NOT NULL,
+    w0              REAL,
+    w1              REAL,
+    w2              REAL,
+    w3              REAL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    acked_at        TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_fl_commands_open
+    ON fl_commands (acked_at, created_at);

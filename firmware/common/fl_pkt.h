@@ -9,8 +9,11 @@
 #define PKT_VERSION_FL     0x02
 #define PKT_TYPE_START     0x10
 #define PKT_TYPE_WEIGHTS   0x20
+#define PKT_TYPE_GLOBAL    0x30
 #define PKT_SENSOR_LEN     14
-#define PKT_WEIGHTS_LEN    25
+#define PKT_WEIGHTS_LEN    27
+#define PKT_WEIGHTS_LEN_V2 25
+#define PKT_GLOBAL_LEN     25
 #define PKT_START_LEN      8
 
 static uint8_t pkt_xor8(const uint8_t *d, size_t n) {

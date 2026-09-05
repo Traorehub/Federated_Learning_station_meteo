@@ -35,3 +35,23 @@ export type Overview = {
   nodes: NodeStats[]
   readings: Reading[]
 }
+
+export type FlParticipant = {
+  node_id: number
+  n_samples: number
+  w: number[]
+  rssi: number | null
+  snr: number | null
+}
+
+export type FlRound = {
+  id: number
+  status: string
+  started_at: string
+  closed_at: string | null
+  timeout_s: number
+  w: number[] | null
+  n_total: number | null
+  n_nodes: number | null
+  participants?: FlParticipant[]
+}
