@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react'
-import { fetchRounds, startRound } from '../api'
-import type { FlRound } from '../types'
+import { fetchAuto, fetchRoundErrors, fetchRounds, setAuto, startRound } from '../api'
+import type { FlAuto, FlErrors, FlRound } from '../types'
+import { ErrorPanel } from './ErrorPanel'
 import { ViewNav } from './ViewNav'
 
 const POLL_MS = 2500
+const ERR_POLL_MS = 30000
 const EXPECTED = [1, 2]
+
+/** Le tampon d'un nœud (32 échantillons × 15 s) se renouvelle en 8 min :
+ *  en dessous, deux rounds consécutifs réapprennent les mêmes données. */
+const INTERVALS = [
+  { s: 180, label: '3 min' },
+  { s: 300, label: '5 min' },
+  { s: 480, label: '8 min' },
+]
 
 function fmtW(w: number[] | null | undefined): string {
   if (!w || w.length < 4) return '-'
@@ -31,6 +41,8 @@ function participantsOf(round: FlRound): FlRound['participants'] {
 
 export function RoundsView() {
   const [rounds, setRounds] = useState<FlRound[]>([])
+  const [errors, setErrors] = useState<FlErrors | null>(null)
+  const [auto, setAutoState] = useState<FlAuto | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -44,9 +56,10 @@ export function RoundsView() {
     let stopped = false
     const load = async () => {
       try {
-        const list = await fetchRounds()
+        const [list, autoState] = await Promise.all([fetchRounds(), fetchAuto()])
         if (!stopped) {
           setRounds(list)
+          setAutoState(autoState)
           setError(null)
         }
       } catch (err) {
@@ -55,6 +68,26 @@ export function RoundsView() {
     }
     void load()
     const poll = window.setInterval(() => { void load() }, POLL_MS)
+    return () => {
+      stopped = true
+      window.clearInterval(poll)
+    }
+  }, [])
+
+  // Le RMSE dépend des lectures qui arrivent après la clôture : il bouge
+  // lentement, un rafraîchissement au rythme des rounds suffit.
+  useEffect(() => {
+    let stopped = false
+    const load = async () => {
+      try {
+        const data = await fetchRoundErrors()
+        if (!stopped) setErrors(data)
+      } catch {
+        /* la vue reste utilisable sans les erreurs de prédiction */
+      }
+    }
+    void load()
+    const poll = window.setInterval(() => { void load() }, ERR_POLL_MS)
     return () => {
       stopped = true
       window.clearInterval(poll)
@@ -75,6 +108,14 @@ export function RoundsView() {
       setError(err instanceof Error ? err.message : 'start')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const onAuto = async (enabled: boolean, intervalS?: number) => {
+    try {
+      setAutoState(await setAuto(enabled, intervalS))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'auto')
     }
   }
 
@@ -113,6 +154,39 @@ export function RoundsView() {
             </p>
           )}
         </div>
+
+        {auto && (
+          <div className="auto-bar">
+            <button
+              type="button"
+              className={`btn-auto ${auto.enabled ? 'on' : ''}`}
+              onClick={() => { void onAuto(!auto.enabled, auto.interval_s) }}
+            >
+              {auto.enabled ? 'Arrêter la série' : 'Lancer en série'}
+            </button>
+
+            <label className="auto-interval">
+              Toutes les
+              <select
+                value={auto.interval_s}
+                onChange={(e) => { void onAuto(auto.enabled, Number(e.target.value)) }}
+              >
+                {INTERVALS.map((i) => (
+                  <option key={i.s} value={i.s}>{i.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <p className="sub auto-state">
+              {auto.enabled
+                ? `${auto.rounds_started} round${auto.rounds_started > 1 ? 's' : ''} lancé${auto.rounds_started > 1 ? 's' : ''}` +
+                  (auto.next_in_s != null ? ` · prochain dans ${auto.next_in_s} s` : '')
+                : 'Série à l’arrêt. Le serveur enchaîne les rounds même navigateur fermé.'}
+            </p>
+
+            {auto.last_error && <p className="sub auto-err">Dernière erreur : {auto.last_error}</p>}
+          </div>
+        )}
 
         {openRound && (
           <div className="grid">
@@ -186,6 +260,8 @@ export function RoundsView() {
           </table>
         </div>
       </section>
+
+      <ErrorPanel data={errors} />
 
       <footer>
         FedAvg : w = Σ (n_k / n) w^(k) · LoRa 433 MHz SF7 · token ingest hors navigateur

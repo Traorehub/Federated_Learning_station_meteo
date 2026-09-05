@@ -37,8 +37,9 @@ Questions, du plus immédiat au plus loin :
 | Un nœud « bon lien » et un nœud « bord de couverture » coexistent-ils ? | v2 | Oui. Témoin ~ −70 dBm / SNR +10 dB ; loin ~ −100 dBm / SNR souvent négatif, encore décodable. |
 | Les modèles locaux divergent-ils (non i.i.d.) ? | v2 | Oui. Autre pièce, autre climat, \(w\) différents (ex. \(w_1\) ~ 0,31 vs ~ 0,02). |
 | Quelle part des « pertes » est radio, quelle part est le PC / l’agent ? | v2 | Un trou **simultané** des deux nœuds n’est pas LoRa. Un ~99 % dashboard après flash est un wrap de `seq`, pas le canal. Hors trou PC : ~1 % près, ~12 % loin. |
-| FedAvg sous ces pertes : le modèle global reste-t-il utilisable si le nœud 2 timeout ? | v3 | Oui. 4 sept. 2026 : 12 rounds à 2 nœuds (\(w_{\text{global}}\) entre les deux \(w\)) ; timeout (10, 11, 14) = témoin seul. |
-| Perte / précision du modèle, RSSI/latence dans le temps, async, plus de nœuds | v4 | Plus tard. |
+| FedAvg sous ces pertes : le modèle global reste-t-il utilisable si le nœud 2 timeout ? | v3 | **Défini oui, utilisable non.** 12 rounds à 2 nœuds (\(w_{\text{global}}\) entre les deux \(w\)) ; au timeout (10, 11, 14) le global se réduit au témoin, et devient **1,7× moins précis** pour le nœud absent. |
+| Le modèle agrégé prédit-il mieux que les modèles locaux ? | v3 | Non, et c’est attendu : local meilleur dans 27 cas sur 28 (non i.i.d.). La persistance bat même le régresseur : le banc prouve le mécanisme, pas un gain de précision. |
+| RSSI/latence dans le temps, variation du SF, async, plus de nœuds | v4 | Plus tard. |
 
 Ce qu’on **ne** cherche pas ici : un thermomètre cloud, un réseau LoRaWAN opérateur, un réseau de neurones profond sur ESP32, une démo SaaS 24/7.
 

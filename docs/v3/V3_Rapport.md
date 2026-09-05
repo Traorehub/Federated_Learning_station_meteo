@@ -86,7 +86,17 @@ Type `0x10`. `round_id` aux offsets 4-5. XOR à l’octet 7.
 | GET | `/api/fl/rounds` | non | Liste + participants |
 | GET | `/api/fl/commands` | `X-Ingest-Token` | File d’attente agent |
 | POST | `/api/fl/update` | token | Ingest poids ; peut clore le round |
+| GET | `/api/fl/errors` | non | RMSE par round et par nœud |
+| GET · POST | `/api/fl/auto` | non (labo) | Série automatique de rounds |
 | GET | `/health` | non | `fl_agg: true` |
+
+`/api/fl/errors` calcule à la demande, sans nouvelle table : le RMSE d’un round a besoin des températures **postérieures** à sa clôture, qui n’existent pas encore au moment où il se ferme. La requête couvre la fenêtre des rounds demandés, élargie de 5 min en amont — une cible juste après `closed_at` a besoin de ses \(T_{t-1}\) et \(T_{t-2}\).
+
+### Série automatique
+
+Constituer un échantillon de plusieurs dizaines de rounds à la main n’est pas tenable. `/api/fl/auto` fait tourner une boucle côté serveur qui ouvre un round à intervalle fixe, navigateur fermé. Elle n’ouvre jamais un round si un autre est encore ouvert, et l’intervalle court depuis l’**ouverture** du précédent, pour que la cadence reste régulière même quand un round va au timeout. L’état vit en mémoire du processus (un seul worker uvicorn) : un redéploiement remet la série à l’arrêt, ce qui évite qu’un lanceur survive en silence.
+
+Le choix de l’intervalle n’est pas cosmétique, et un plancher de 60 s est imposé. Le tampon d’un nœud fait 32 échantillons à 15 s, soit **8 min pour se renouveler** : plus les rounds se rapprochent, plus ils réapprennent les mêmes données et produisent des \(w\) redondants. Surtout, chaque clôture déclenche un downlink pendant lequel la gateway émet et perd des paquets capteur — ceux-là mêmes qui servent ensuite à mesurer l’erreur. Enchaîner les rounds dégrade donc les données qui les évaluent. La fenêtre d’évaluation de 15 min ajoute un recouvrement entre rounds voisins. Un gros échantillon s’obtient par une **session longue**, pas par une cadence rapide.
 
 Dernière mise à jour par nœud : `DISTINCT ON (node_id) … ORDER BY received_at DESC`. Après clôture, les participants affichés sont ceux reçus **avant** `closed_at`.
 
@@ -94,7 +104,9 @@ Tables : `fl_rounds`, `fl_commands` (en plus de `fl_updates`). Le volume Docker 
 
 ## Frontend
 
-Hash `#rounds` : bouton start, cartes d’attente nœud 1 / nœud 2, historique (`w` global, qui a participé). Hash `#radio` (défaut) : cartes T/H/RSSI/SNR inchangées. Pas de token ingest dans le navigateur.
+Hash `#rounds` : bouton start, barre de série automatique (marche/arrêt, intervalle, prochain round), cartes d’attente nœud 1 / nœud 2, historique (`w` global, qui a participé), puis le panneau **Erreur du modèle**. Hash `#radio` (défaut) : cartes T/H/RSSI/SNR inchangées. Pas de token ingest dans le navigateur.
+
+Le panneau d’erreur tient en deux blocs. Un tableau donne, par nœud, le RMSE de la persistance, celui de son modèle local, et celui du modèle global selon qu’il a participé au round ou non — la dernière colonne chiffre la pénalité d’un timeout. En dessous, une courbe SVG (aucune dépendance ajoutée) suit le RMSE du modèle global round par round : marqueur plein quand le nœud a été agrégé, marqueur creux quand il était absent. Les creux hauts sont exactement le résultat central de la v3.
 
 Un round filmé de bout en bout (agent + vue `#rounds`, accéléré 3×) : `docs/media/demo-round-fedavg.mp4`, inséré dans le README. On y suit l’émission du `start_round`, l’état « en attente » du nœud qui n’a pas encore répondu, puis la clôture **à l’arrivée du second update**, sans attendre le timeout.
 
@@ -109,9 +121,13 @@ firmware/gateway_uno/             25/27 o, TX G, tampon USB 96
 agent/serial_bridge.py            poll commandes, retransmit 2,5 s
 backend/app/fedavg.py
 backend/app/fl_rounds.py
+backend/app/fl_error.py           RMSE par round, persistance de référence
+backend/app/fl_auto.py            série automatique, plancher 60 s
 database/schema.sql               fl_rounds, fl_commands
 frontend/src/components/RoundsView.tsx
+frontend/src/components/ErrorPanel.tsx  tableau + courbe d'erreur
 frontend/src/components/ViewNav.tsx     bascule Liaison / Rounds
+results/.../erreur.py             même calcul, hors ligne sur les CSV
 ```
 
 Flasher **les deux nœuds et la gateway**. Relancer l’agent. Reconstruire l’API + le frontend sur le VPS (`docker compose up -d --build` dans `docker/`).
@@ -120,7 +136,7 @@ Flasher **les deux nœuds et la gateway**. Relancer l’agent. Reconstruire l’
 
 Relevé du 4 septembre 2026, conservé pour la traçabilité des exports. Même placement que la v2. Gateway + PC fixes. Nœud 1 (WROOM-32D, 5 dBm) ~2 m = témoin. Nœud 2 (ESP32-S3, 14 dBm) autre pièce ~30-40 m = dégradé. Radio : 433 MHz, SF7, BW 125 kHz, CR 4/5.
 
-Export Postgres : `results/campagne-2026-09-04-v3/` (`fl_rounds.csv`, `fl_updates.csv`, `node_stats.csv`). 749 lignes `fl_updates`, dont 677 périodiques (`round_id = 0`, hors agrégation) et le reste tagué d’un round.
+Export Postgres : `results/campagne-2026-09-04-v3/` (`fl_rounds.csv`, `fl_updates.csv`, `node_stats.csv`, `readings.csv`). 749 lignes `fl_updates`, dont 677 périodiques (`round_id = 0`, hors agrégation) et le reste tagué d’un round.
 
 Fenêtre des 19 rounds : 21:03 → 22:37 UTC. Timeout serveur : 90 s. Un round se clôt **dès deux nœuds distincts** ou à ce timeout.
 
@@ -163,9 +179,31 @@ Le modèle global **reste défini** : c’est le seul vecteur reçu à temps (le
 
 Le round 5 illustre le même mécanisme en mise au point : un seul vecteur avant timeout, puis des paquets nœud 2 en retard (S3 encore proche, RSSI ~ −56 dBm).
 
+### Erreur de prédiction
+
+Les vecteurs seuls ne disent pas si le modèle est **bon**. Chaque \(w\) a donc été rejoué hors ligne sur les températures réellement mesurées **après** la clôture du round (horizon 15 min), et comparé à la **persistance** (prédire \(T_t = T_{t-1}\)). Script : `results/campagne-2026-09-04-v3/erreur.py`, sur `readings.csv` exporté du serveur.
+
+Un triplet n’est évalué que si ses trois lectures se suivent en `seq` : un paquet perdu casse le triplet et l’écarte. Sur 394 lectures valides, 319 triplets exploitables.
+
+RMSE moyen, en degrés Celsius :
+
+| Nœud | Persistance | Son modèle local | Global **s’il a participé** | Global **s’il était absent** |
+|------|-------------|------------------|------------------------------|-------------------------------|
+| 1 (témoin) | 0,028 | 0,034 | 0,750 | 2,296 |
+| 2 (distant) | 0,380 | 0,353 | 0,865 | 1,467 |
+
+Trois lectures, dans l’ordre d’importance.
+
+**1. Le nœud exclu reçoit un modèle qui lui va mal.** C’est le résultat central. Quand le nœud 2 rate le round, le modèle qu’on lui renvoie est **1,7 fois** moins précis que lorsqu’il participe (1,467 contre 0,865 °C). Le lien est direct entre un timeout radio et la qualité du modèle redescendu. La situation est symétrique : au round 2, seul le nœud 2 avait répondu, et le global qui en découle donne 2,296 °C d’erreur **pour le nœud 1**. Un client absent n’est pas seulement « hors de la somme » : il repart avec le modèle de l’autre pièce.
+
+Réserve de méthode : le chiffre du nœud 2 s’appuie sur quatre rounds (5, 10, 11, 14), celui du nœud 1 sur **un seul** (round 2). L’ordre de grandeur est cohérent, la valeur exacte du nœud 1 demande confirmation.
+
+**2. Le modèle global est moins bon que chaque modèle local, sur 27 comparaisons sur 28.** Ce n’est pas un défaut d’implémentation : c’est l’effet attendu de l’hétérogénéité. Les deux pièces n’ont ni la même température (~25,8 °C contre ~30 °C) ni la même humidité (~88 % contre ~72 %). La moyenne pondérée produit un compromis biaisé pour chacun : pour le nœud 1, le global surestime d’environ 0,85 °C de façon systématique. C'est le *client drift* documenté en FL non-i.i.d., ici mesuré sur du matériel réel plutôt que simulé.
+
+**3. La persistance bat le modèle appris.** Prédire « la même température qu’il y a 15 s » donne 0,028 °C d’erreur sur le nœud 1, là où son propre régresseur donne 0,034. Il faut le dire : sur ces séries, un modèle à quatre poids **n’apporte rien** en précision brute. La température varie moins que la résolution du DHT11 sur un pas de 15 s. Le banc démontre le **mécanisme** fédéré, pas la supériorité de ce modèle-ci. Un signal plus dynamique, ou un horizon plus long, seraient nécessaires pour que l’apprentissage ait un intérêt prédictif.
+
 ### Ce qui n’est pas mesuré ici
 
-- **Perte / précision du régresseur** (MSE sur \(T\)) : le dashboard rounds affiche \(w\) et les participants, pas encore une courbe d’erreur.
 - **Taux de perte radio** : `node_stats.packets_missing` ~ 130 000 est un **wrap de `seq`** après reflashes, pas le canal. Les pertes LoRa (hors trou PC) restent celles des campagnes v2 : ~1 % près, ~12 % loin (`results/campagne-2026-08-31/`).
 - **Latence et RSSI dans le temps** : prévu en v4. Ici, RSSI/SNR sont ceux du paquet poids du round.
 
@@ -180,11 +218,13 @@ Historique RSSI fin, latence, 15-20 nœuds : **v4**. MQTT : hors périmètre tan
 Deux régimes sur le **même** banc, dans la même session.
 
 1. Lien dégradé mais encore décodable (−105 à −109 dBm, SNR négatif) : les deux \(w^{(k)}\) arrivent, et \(w_{\mathrm{global}}\) est une moyenne réelle entre deux climats, chaque composante tombant entre les deux vecteurs locaux. Le client faible **pèse** sur le modèle.
-2. Nœud 2 hors fenêtre 90 s : FedAvg se réduit au témoin ; le global ne s’effondre pas, il **ignore** le client absent, sans interpolation. Le round 10 distingue « injoignable » de « trop lent » : les updates existent en base, après `closed_at`.
+2. Nœud 2 hors fenêtre 90 s : FedAvg se réduit au témoin. Le global **reste défini** — il ignore le client absent sans l’interpoler — mais l’erreur mesurée montre qu’il n’est pas pour autant *utilisable* par ce client : il devient 1,7 fois moins précis pour lui. Le round 10 distingue « injoignable » de « trop lent » : les updates existent en base, après `closed_at`.
 
 Un round à deux participants se clôt avant le timeout (~42 à 77 s), donc la barrière synchrone n’est pas le facteur limitant tant que les deux clients répondent. Le coût du mode synchrone est ailleurs : pendant le downlink la gateway émet, et quelques paquets capteur tombent par half-duplex.
 
-La participation, elle, est bien corrélée au lien : c’est ce que la v2 ne pouvait pas montrer, faute d’agrégation. La suite (courbe d’erreur, historique RSSI, variation du SF, asynchrone) est en [v4](../ARCHITECTURE.md).
+Le point qui répond à la question de départ : **la qualité radio se propage jusqu’au modèle**. Un timeout ne dégrade pas seulement une statistique de participation, il renvoie au client concerné un modèle calibré sur la pièce d’en face. C’est ce que la v2 ne pouvait pas montrer, faute d’agrégation.
+
+En contrepartie, le banc montre aussi sa limite : la persistance bat le régresseur, et le modèle global est moins bon que chaque modèle local. La démonstration porte sur le **mécanisme** fédéré sous contrainte radio, pas sur un gain de précision. La suite (historique RSSI, variation du SF, asynchrone, signal plus dynamique) est en [v4](../ARCHITECTURE.md).
 
 ## Référence
 

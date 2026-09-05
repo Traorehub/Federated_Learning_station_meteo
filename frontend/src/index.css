@@ -154,6 +154,58 @@ h1 {
   cursor: not-allowed;
 }
 
+.auto-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-2);
+}
+
+.btn-auto {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lamp);
+  background: transparent;
+  border: 1px solid var(--lamp);
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+/* Série en cours : le bouton devient plein, comme une lampe allumée. */
+.btn-auto.on {
+  color: var(--bg);
+  background: var(--lamp);
+}
+
+.auto-interval {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.auto-interval select {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.auto-state { margin: 0 !important; font-size: 13px; }
+.auto-err { margin: 0 !important; color: var(--off); }
+
 .w-vec, .w-cell {
   font-family: var(--mono);
   font-size: 13px;
@@ -293,6 +345,61 @@ th {
 
 tr.bad td { color: var(--off); }
 .empty { color: var(--muted); text-align: center !important; padding: 28px !important; }
+
+.err-panel { margin-top: 20px; }
+
+.err-chart-wrap {
+  padding: 18px 20px 20px;
+  border-top: 1px solid var(--line);
+}
+
+.err-chart {
+  width: 100%;
+  height: auto;
+  margin-top: 10px;
+}
+
+.err-grid { stroke: var(--line); stroke-width: 1; }
+
+.err-axis {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.err-line { fill: none; stroke-width: 2; }
+
+.err-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: baseline;
+}
+
+.err-n { color: var(--muted); }
+
+.err-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.err-key { display: inline-flex; align-items: center; gap: 8px; }
+
+.err-key .dot,
+.err-key .sq {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--muted);
+}
+
+.err-key .dot { border-radius: 50%; background: var(--muted); }
+.err-key .sq { background: var(--bg-2); }
 
 footer {
   margin-top: 22px;

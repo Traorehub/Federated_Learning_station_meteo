@@ -189,6 +189,8 @@ Le round est **piloté par le serveur**, ce qui rend le timing reproductible :
 
 Les poids envoyés hors round (`round_id = 0`, émission périodique de la v2) sont stockés mais **exclus** de l’agrégation.
 
+Pour constituer un échantillon, le serveur sait aussi enchaîner les rounds seul, à intervalle réglable depuis la vue `#rounds`. Le rythme mérite attention plutôt qu’un maximum : le tampon d’un nœud met **8 minutes** à se renouveler (32 échantillons à 15 s), si bien que des rounds trop rapprochés réapprennent les mêmes données. Et chaque clôture déclenche un downlink pendant lequel la gateway émet, donc perd des paquets capteur — précisément ceux qui servent ensuite à mesurer l’erreur des modèles. Un grand nombre de rounds s’obtient par une session longue, pas par une cadence rapide.
+
 ## Première campagne (matériel réel)
 
 Deux pièces, même gateway Uno. Nœud 1 (WROOM-32D) près de la gateway (lien témoin). Nœud 2 (ESP32-S3) plus loin (lien dégradé, climat distinct). LoRa 433 MHz, SF7, BW 125 kHz. Données lues sur le Postgres du déploiement personnel (29 août 2026) :
@@ -267,15 +269,36 @@ Trois rounds se sont clos au timeout avec un seul participant. Le modèle global
 
 Le round 10 est le plus instructif : le client distant n’était pas hors service, il était **hors délai**. Ses paquets figurent dans `fl_updates` avec le bon `round_id`, mais après `closed_at`, donc hors de la somme. La distinction « client injoignable » / « client trop lent » est ainsi tracée, ce qu’un FedAvg simulé ne permettrait pas.
 
+### Ce que vaut le modèle produit
+
+Comparer des vecteurs de poids ne dit pas si le modèle **prédit** bien. Chaque \(w\) a donc été rejoué sur les températures réellement mesurées dans les quinze minutes **suivant** la clôture du round, puis comparé à la prédiction triviale dite de persistance — annoncer que la température ne changera pas. Un triplet de lectures n’est retenu que si ses `seq` se suivent : un paquet perdu l’écarte de l’évaluation.
+
+Erreur quadratique moyenne, en degrés Celsius :
+
+| Nœud | Persistance | Son modèle local | Global **s’il a participé** | Global **s’il était absent** |
+|------|-------------|------------------|------------------------------|-------------------------------|
+| 1 (témoin) | 0,028 | 0,034 | 0,750 | 2,296 |
+| 2 (distant) | 0,380 | 0,353 | 0,865 | 1,467 |
+
+**Le client exclu repart avec un modèle qui lui va mal.** C’est le lien le plus direct entre la radio et l’apprentissage. Quand le nœud 2 rate le round, le modèle qu’on lui redescend est **1,7 fois** moins précis que lorsqu’il a été agrégé. La situation est symétrique : au round 2, seul le nœud 2 avait répondu, et le modèle qui en découle atteint 2,3 °C d’erreur pour le nœud 1. Un timeout LoRa ne retire donc pas seulement un client d’une moyenne — il lui renvoie un modèle calibré sur la pièce d’en face. Le chiffre du nœud 2 repose sur quatre rounds, celui du nœud 1 sur un seul : l’ordre de grandeur tient, la valeur exacte demande confirmation.
+
+**Le modèle global est moins précis que chaque modèle local, dans 27 comparaisons sur 28.** Ce n’est pas un défaut d’agrégation mais l’effet attendu de l’hétérogénéité : les deux pièces ne partagent ni température ni humidité, et la moyenne produit un compromis systématiquement biaisé — d’environ 0,85 °C de surestimation pour le témoin. C’est le *client drift* du FL non i.i.d., ici mesuré sur du matériel plutôt que simulé.
+
+**La persistance bat le régresseur appris.** Sur ces séries, un modèle à quatre poids n’apporte aucun gain de précision : la température varie moins que la résolution du capteur sur un pas de quinze secondes. Le banc démontre le mécanisme fédéré sous contrainte radio, pas la supériorité de ce modèle. Établir un gain prédictif supposerait un signal plus dynamique ou un horizon plus long.
+
+Ces trois grandeurs sont calculées en direct par le dashboard, dans le panneau **Erreur du modèle** de la vue `#rounds` : le tableau par nœud, et une courbe du RMSE round par round où un marqueur creux signale un nœud absent de la moyenne. Le même calcul est reproductible hors ligne sur les exports (`results/campagne-2026-09-04-v3/erreur.py`).
+
 ### Ce que la session établit
 
 - Un lien à **SNR négatif** (−105 à −109 dBm) transporte encore des mises à jour de modèle : la contrainte radio ne supprime pas la participation, elle la rend intermittente. Sur les 18 rounds où au moins un client a répondu, les **deux** clients ont été agrégés **12 fois**.
 - Quand il participe, la moyenne pondérée déplace réellement le modèle global vers son climat ; quand il dépasse le délai, le round **aboutit quand même** avec un client de moins.
+- Un round qui aboutit n’est pas pour autant un round sans conséquence : le client exclu reçoit un modèle **1,7 fois moins précis** pour lui. La dégradation radio se propage jusqu’à la qualité du modèle, et pas seulement jusqu’au taux de participation.
 - Le pilotage synchrone a un coût mesurable : la gateway est en émission pendant la diffusion du modèle global, et quelques paquets capteur manquent alors par half-duplex. C’est une perte imputable au **protocole**, pas au canal.
+- La limite du banc est assumée : le modèle global reste moins précis que les modèles locaux, et la persistance les bat tous les deux. Ce qui est démontré, c’est la mécanique fédérée sous contrainte radio.
 
 ### Ce qui n’est pas encore mesuré
 
-Une courbe d’erreur du régresseur (MSE de prédiction avant / après agrégation), l’historique fin du RSSI et de la latence, la variation contrôlée du spreading factor, le mode asynchrone, et le passage à un nombre de clients supérieur à deux.
+L’historique fin du RSSI et de la latence, la variation contrôlée du spreading factor, le mode asynchrone, et le passage à un nombre de clients supérieur à deux.
 
 ## Chaîne
 
@@ -363,9 +386,9 @@ Un clic sur le GIF ouvre la vidéo complète (MP4).
 | Composant | Rôle |
 |-----------|------|
 | `agent/serial_bridge.py` | Lit le port COM, POST `/api/ingest` et `/api/fl/update`, relaie `start_round` et le modèle global |
-| FastAPI + Uvicorn | Ingest capteur, ingest poids, rounds FedAvg, overview, WebSocket `/ws/live` |
+| FastAPI + Uvicorn | Ingest capteur, ingest poids, rounds FedAvg (manuels ou en série), erreur de prédiction, overview, WebSocket `/ws/live` |
 | PostgreSQL 16 | `readings`, `node_stats`, `fl_updates`, `fl_rounds` |
-| React (Vite) | Cartes nœuds (liaison) ; vue `#rounds` (participants, \(w\) global) |
+| React (Vite) | Cartes nœuds (liaison) ; vue `#rounds` (participants, \(w\) global, RMSE par nœud) |
 | Docker / nginx | Reverse proxy. Brancher un domaine personnel ou un tunnel si besoin |
 
 ## Structure du dépôt
@@ -379,6 +402,7 @@ Un clic sur le GIF ouvre la vidéo complète (MP4).
 | `database/` | Schéma SQL |
 | `docker/` | Compose (local ou VPS personnel) |
 | `docs/` | Architecture, LoRa, matériel, déploiement, photos |
+| `results/` | Exports Postgres des sessions et scripts d’analyse |
 
 ## Démarrage rapide
 

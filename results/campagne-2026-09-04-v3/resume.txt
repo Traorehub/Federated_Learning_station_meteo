@@ -20,6 +20,20 @@ Rounds utiles témoin / dégradé : à partir du round 6.
 --- Updates ---
 749 lignes fl_updates, dont 677 périodiques (round_id = 0).
 
+--- Erreur de prédiction (erreur.py sur readings.csv) ---
+RMSE °C, horizon 15 min après closed_at, triplets à seq consécutifs.
+394 lectures valides -> 319 triplets exploitables.
+
+noeud  persistance  w local  w global présent  w global absent  pénalité
+  1        0,028     0,034       0,750             2,296          x3,1
+  2        0,380     0,353       0,865             1,467          x1,7
+
+Résultat clé : le nœud exclu du round reçoit un modèle 1,7x moins précis
+pour lui (n2, rounds 5/10/11/14). Symétrique : round 2 (n2 seul) -> 2,296
+pour n1. Attention, la colonne "absent" de n1 repose sur 1 seul round.
+Global moins bon que local dans 27 comparaisons sur 28 (non-i.i.d.).
+La persistance bat le régresseur : modèle 4 poids sans gain sur ces séries.
+
 --- node_stats (ne pas citer comme perte radio) ---
 Nœud 1 : 754 reçus, missing ~130437 (wrap seq après reflashes)
 Nœud 2 : 662 reçus, missing ~130546

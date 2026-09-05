@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .db import connect, close, get_pool, record_to_dict
+from .fl_auto import runner as auto_runner
+from .fl_error import round_errors
 from .fl_ingest import FlUpdatePayload, ingest_fl_update
 from .fl_rounds import list_rounds, on_weight_update, pending_commands, start_round
 from .ingest import IngestPayload, ingest_reading
@@ -109,7 +111,9 @@ async def lifespan(_app: FastAPI):
             stmt = stmt.strip()
             if stmt:
                 await conn.execute(stmt)
+    auto_runner.start()
     yield
+    await auto_runner.stop()
     await close()
 
 
@@ -193,6 +197,26 @@ async def api_list_rounds(limit: int = Query(default=20, ge=1, le=100)) -> dict:
     async with pool.acquire() as conn:
         rounds = await list_rounds(conn, limit)
     return {"rounds": rounds}
+
+
+@app.get("/api/fl/auto")
+async def api_auto_state() -> dict:
+    return auto_runner.state()
+
+
+@app.post("/api/fl/auto")
+async def api_auto_configure(
+    enabled: bool = Query(...),
+    interval_s: int | None = Query(default=None, ge=60, le=3600),
+) -> dict:
+    return auto_runner.configure(enabled, interval_s)
+
+
+@app.get("/api/fl/errors")
+async def api_round_errors(limit: int = Query(default=20, ge=1, le=100)) -> dict:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        return await round_errors(conn, limit)
 
 
 @app.get("/api/fl/commands")

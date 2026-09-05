@@ -55,3 +55,47 @@ export type FlRound = {
   n_nodes: number | null
   participants?: FlParticipant[]
 }
+
+export type FlAuto = {
+  enabled: boolean
+  interval_s: number
+  min_interval_s: number
+  rounds_started: number
+  last_round_at: string | null
+  next_in_s: number | null
+  last_error: string | null
+}
+
+/** RMSE en °C, mesuré sur les lectures postérieures à la clôture du round. */
+export type FlNodeError = {
+  node_id: number
+  n_eval: number
+  participated: boolean
+  rmse_persistence: number | null
+  rmse_local: number | null
+  rmse_global: number | null
+}
+
+export type FlRoundError = {
+  round_id: number
+  closed_at: string
+  n_nodes: number | null
+  nodes: FlNodeError[]
+}
+
+export type FlNodeErrorSummary = {
+  node_id: number
+  rmse_persistence: number | null
+  rmse_local: number | null
+  rmse_global_present: number | null
+  rmse_global_absent: number | null
+  penalty: number | null
+  rounds_present: number
+  rounds_absent: number
+}
+
+export type FlErrors = {
+  horizon_min: number
+  rounds: FlRoundError[]
+  nodes: FlNodeErrorSummary[]
+}

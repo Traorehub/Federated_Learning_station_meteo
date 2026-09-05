@@ -1,4 +1,4 @@
-import type { FlRound, Overview, Reading } from './types'
+import type { FlAuto, FlErrors, FlRound, Overview, Reading } from './types'
 
 export async function fetchOverview(): Promise<Overview> {
   const res = await fetch('/api/overview')
@@ -11,6 +11,26 @@ export async function fetchRounds(): Promise<FlRound[]> {
   if (!res.ok) throw new Error(`rounds ${res.status}`)
   const data: { rounds: FlRound[] } = await res.json()
   return data.rounds ?? []
+}
+
+export async function fetchRoundErrors(): Promise<FlErrors> {
+  const res = await fetch('/api/fl/errors')
+  if (!res.ok) throw new Error(`errors ${res.status}`)
+  return res.json()
+}
+
+export async function fetchAuto(): Promise<FlAuto> {
+  const res = await fetch('/api/fl/auto')
+  if (!res.ok) throw new Error(`auto ${res.status}`)
+  return res.json()
+}
+
+export async function setAuto(enabled: boolean, intervalS?: number): Promise<FlAuto> {
+  const params = new URLSearchParams({ enabled: String(enabled) })
+  if (intervalS != null) params.set('interval_s', String(intervalS))
+  const res = await fetch(`/api/fl/auto?${params}`, { method: 'POST' })
+  if (!res.ok) throw new Error(`auto ${res.status}`)
+  return res.json()
 }
 
 export async function startRound(): Promise<FlRound> {

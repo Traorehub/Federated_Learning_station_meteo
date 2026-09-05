@@ -63,7 +63,7 @@ Cette décision est **documentée** pour la thèse. Le firmware écoute `start_r
 |---|---|---|
 | **v1** | Communications : temp, hum, RSSI, SNR, seq, âge | **Faite** |
 | **v2** | Poids locaux sur LoRa, canal témoin / dégradé | **Faite** |
-| **v3** | FedAvg : moyenne + modèle global, UI rounds | **Faite** (campagne 4 sept. 2026) |
+| **v3** | FedAvg : moyenne + modèle global, UI rounds, erreur de prédiction mesurée | **Faite** (campagne 4 sept. 2026) |
 | **v4** | Historique RSSI, latence, passage à l’échelle | Plus tard |
 
 Les métriques de liaison (RSSI, SNR, trous de séquence) remontent **dès la v1**
@@ -78,6 +78,11 @@ Le serveur ne se limite pas au stockage :
 - **Taux de perte** = `missing / (received + missing)`
 - **Paquets corrompus** (checksum LoRa invalide)
 - **Âge** = maintenant - `last_seen_at`
+
+Depuis la v3, il évalue aussi la **qualité des modèles** (`/api/fl/errors`) : RMSE du modèle
+global et des modèles locaux sur les lectures postérieures à la clôture du round, avec la
+persistance comme référence. Ce calcul est fait à la demande, pas au moment de la clôture :
+la vérité terrain n'existe pas encore quand le round se ferme.
 
 ## Hors périmètre (volontairement, pour l’instant)
 
