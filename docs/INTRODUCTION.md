@@ -35,7 +35,7 @@ Questions, du plus immédiat au plus loin :
 | La chaîne physique tient-elle (deux nœuds, une gateway, un site) ? | v1 | Oui. Dashboard T, H, RSSI, SNR, `seq`, `ok`. |
 | Les poids d’un modèle minuscule passent-ils en LoRa (paquet court) ? | v2 | Oui. 25 octets, table `fl_updates`. |
 | Un nœud « bon lien » et un nœud « bord de couverture » coexistent-ils ? | v2 | Oui. Témoin ~ −70 dBm / SNR +10 dB ; loin ~ −100 dBm / SNR souvent négatif, encore décodable. |
-| Les modèles locaux divergent-ils (non i.i.d.) ? | v2 | Oui, \(w\) différents (ex. \(w_1\) ~ 0,31 vs ~ 0,02). L’origine de l’écart est la **calibration des capteurs**, non les pièces (v3, échange des rôles). |
+| Les modèles locaux divergent-ils (non i.i.d.) ? | v2 | Oui, $w$ différents (ex. $w_1$ ~ 0,31 vs ~ 0,02). L’origine de l’écart est la **calibration des capteurs**, non les pièces (v3, échange des rôles). |
 | Quelle part des « pertes » est radio, quelle part est le PC / l’agent ? | v2 | Un trou **simultané** des deux nœuds n’est pas LoRa. Un ~99 % dashboard après flash est un wrap de `seq`, pas le canal. Hors trou PC : ~1 % près, ~12 % loin. |
 | FedAvg sous ces pertes : le modèle global reste-t-il utilisable si un nœud timeout ? | v3 | **Défini oui, utilisable non.** Le global se réduit au seul client reçu à temps et devient **1,7 à 1,9× moins précis** pour le nœud absent. |
 | Cette dégradation vient-elle du lien ou du nœud ? | v3 | **Du lien.** Après échange des deux nœuds de pièce, à puissances égalisées, le phénomène a suivi la pièce (×1,8 à 1,9 sur le nouveau nœud éloigné). |
@@ -43,7 +43,12 @@ Questions, du plus immédiat au plus loin :
 | Le régresseur appris bat-il la prédiction triviale ? | v3 | **Seulement si le signal bouge.** +14 % sur le nœud bruité de jour ; indistinguable de la persistance sur un signal quasi immobile. |
 | Le RSSI moyen renseigne-t-il sur la fiabilité du lien ? | v3 | **Non**, biais du survivant : il n’est mesuré que sur les paquets reçus. C’est le **taux de réception** qui sépare participation et exclusion (96 % contre 50 %). |
 | RSSI/latence dans le temps | v4 | Fait. Vue `#reseau`. |
-| Variation du SF, async, plus de deux nœuds | v4+ | Plus tard. |
+| Pourquoi 17 % de perte paquet donnent-ils 37 % d’exclusions ? | v4 | **Le protocole, pas la radio.** La fenêtre de timeout ne contient qu’une occasion d’émettre : une perte unique reporte la réponse de 60 s et exclut le nœud. |
+| La latence de réponse dépend-elle de la qualité du lien ? | v4 | **Non.** Moins d’une seconde de dispersion : elle mesure l’écart de phase entre l’ordonnancement du serveur et la cadence d’émission des nœuds. |
+| Le modèle agrégé se stabilise-t-il ? | v4 | Non, pas en cinq heures : $w_0$ perd un quart de sa valeur sans plateau. |
+| Relever le timeout supprime-t-il les exclusions ? | v5 | Oui, sur le même trafic : 84 % → 98 % de rounds complets dès 120 s. [Rapport](v5/V5_Rapport.md). |
+
+Synthèse des résultats : [BILAN.md](BILAN.md).
 
 Ce qu’on **ne** cherche pas ici : un thermomètre cloud, un réseau LoRaWAN opérateur, un réseau de neurones profond sur ESP32, une démo SaaS 24/7.
 
@@ -80,20 +85,24 @@ Les dashboards ne se fusionnent pas : v1 = radio, v3 = rounds et modèle, v4 = m
 |---------|------|--------|
 | v1 | Chaîne comms | Faite. [Rapport](v1/V1_Rapport.md) |
 | v2 | SGD local + poids LoRa + campagnes témoin/dégradé | Faite. [Rapport](v2/V2_Rapport.md) |
-| v3 | Moyenne FedAvg + renvoi de \(w_{\text{global}}\) | Faite. [Rapport](v3/V3_Rapport.md), puis [échange des rôles](v3/V3_Session_inversion.md) |
-| v4 | Historique du taux de réception, du RSSI et de la latence | Faite. Vue `#reseau` |
-| v5 | Variation du SF, asynchrone, plus de deux nœuds | Plus tard |
+| v3 | Moyenne FedAvg + renvoi de $w_{\text{global}}$ | Faite. [Rapport](v3/V3_Rapport.md), puis [échange des rôles](v3/V3_Session_inversion.md) |
+| v4 | Historique du taux de réception, du RSSI et de la latence | Faite. [Rapport](v4/V4_Rapport.md) |
+| v5 | Tolérance du timeout (90 / 120 / 150 s alternés) | Faite. [Rapport](v5/V5_Rapport.md) |
+| Synthèse | Résultats v1 à v5 | [BILAN.md](BILAN.md) |
 
-Chaque version s’appuie sur la précédente. Flasher aujourd’hui installe la v3 (poids 27 octets + RX du modèle global). Relancer l’agent et reconstruire Docker.
+Chaque version s’appuie sur la précédente. Flasher aujourd’hui installe le firmware v3 (poids 27 octets et réception du modèle global). Relancer l’agent et reconstruire Docker.
 
 ## Où lire la suite
 
 | Document | Contenu |
 |----------|---------|
-| [README](../README.md) | Hub : démo, table des versions, lancement |
+| [README](../README.md) | Hub : démo, résultats, lancement |
+| [BILAN.md](BILAN.md) | Synthèse des résultats, v1 à v5 |
 | [v1](v1/V1_Rapport.md) | Câblage, paquet 14 o, RSSI, agent, `seq` |
 | [v2](v2/V2_Rapport.md) | Modèle 4 poids, campagnes, artefacts de perte |
 | [v3](v3/V3_Rapport.md) | FedAvg, paquets, API, UI `#rounds` |
+| [v4](v4/V4_Rapport.md) | Réception, RSSI, latence |
+| [v5](v5/V5_Rapport.md) | Timeout 90 / 120 / 150 s |
 | [HARDWARE.md](HARDWARE.md) | Broches et couleurs |
 | [LORA.md](LORA.md) | Format radio |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Sync/async, périmètre |

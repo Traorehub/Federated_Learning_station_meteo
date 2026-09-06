@@ -11,22 +11,15 @@ Ce n’est ni « capter et entraîner en même temps », ni « tout stocker puis
 3. Toutes les `WEIGHT_EVERY` (4) mesures, si au moins 3 échantillons : envoi du paquet poids (25 octets).
 4. L’agrégation fédérée a lieu lorsqu’un round est **clos côté serveur** (v3).
 
-FedAvg **synchrone** (signal `start_round`). L’asynchrone (chaque nœud selon sa radio) est plus réaliste en LoRa ; il vient après le sync. En v2, les nœuds n’écoutent que 400 ms après chaque TX capteur : cette fenêtre s’est révélée trop courte pour capter le signal de round, et la v3 est passée à une **écoute continue**. La v3 clôt le round, calcule \(w_{\text{global}}\) et le renvoie (type `0x30`). Les paquets poids **25 octets** restent acceptés par la gateway ; le firmware v3 envoie **27 octets** (`round_id` aux offsets 24-25).
+FedAvg **synchrone** (signal `start_round`). L’asynchrone (chaque nœud selon sa radio) est plus réaliste en LoRa ; il vient après le sync. En v2, les nœuds n’écoutent que 400 ms après chaque TX capteur : cette fenêtre s’est révélée trop courte pour capter le signal de round, et la v3 est passée à une **écoute continue**. La v3 clôt le round, calcule $w_{\text{global}}$ et le renvoie (type `0x30`). Les paquets poids **25 octets** restent acceptés par la gateway ; le firmware v3 envoie **27 octets** (`round_id` aux offsets 24-25).
 
 ## Modèle embarqué
 
 Fichier : `firmware/common/fl_model.h` (copié dans chaque sketch Arduino).
 
-On prédit la température au pas \(t\) à partir de \(T_{t-1}\), \(T_{t-2}\), \(H_{t-1}\). Normalisation \(T/50\), \(H/100\) pour garder des coefficients stables en float ESP32.
+On prédit la température au pas $t$ à partir de $T_{t-1}$, $T_{t-2}$, $H_{t-1}$. Normalisation $T/50$, $H/100$ pour garder des coefficients stables en float ESP32.
 
-$$
-\frac{\hat{T}_t}{50}
-=
-w_0\,\frac{T_{t-1}}{50}
-+ w_1\,\frac{T_{t-2}}{50}
-+ w_2\,\frac{H_{t-1}}{100}
-+ w_3 .
-$$
+$$ \frac{\hat{T}_t}{50} = w_0\,\frac{T_{t-1}}{50} + w_1\,\frac{T_{t-2}}{50} + w_2\,\frac{H_{t-1}}{100} + w_3 . $$
 
 | Constante | Valeur |
 |-----------|--------|
@@ -36,7 +29,7 @@ $$
 | `FL_LR` | 0,05 |
 | `FL_FIXED` | 1 000 000 (envoi LoRa en virgule fixe int32) |
 
-Initialisation : \(w = (0{,}6,\ 0{,}3,\ 0,\ 0)\). SGD : pour chaque époque, pour chaque triplet du tampon, erreur \( \hat{y} - y \), mise à jour des quatre poids. `n_trained` = nombre d’échantillons dans le tampon au moment de l’envoi.
+Initialisation : $w = (0{,}6,\ 0{,}3,\ 0,\ 0)$. SGD : pour chaque époque, pour chaque triplet du tampon, erreur $\hat{y} - y$, mise à jour des quatre poids. `n_trained` = nombre d’échantillons dans le tampon au moment de l’envoi.
 
 Ce n’est pas un réseau profond. Quatre scalaires tiennent dans un paquet LoRa SF7.
 
@@ -52,10 +45,10 @@ Little-endian. Version `0x02`, type `0x20`. Le paquet capteur 14 octets **ne cha
 | 3 | 1 | `node_id` |
 | 4 | 2 | `seq` uint16 |
 | 6 | 2 | `n_samples` (`n_trained`) |
-| 8 | 4 | \(w_0\) int32 = round(\(w_0 \times 10^6\)) |
-| 12 | 4 | \(w_1\) |
-| 16 | 4 | \(w_2\) |
-| 20 | 4 | \(w_3\) |
+| 8 | 4 | $w_0$ int32 = round($w_0 \times 10^6$) |
+| 12 | 4 | $w_1$ |
+| 16 | 4 | $w_2$ |
+| 20 | 4 | $w_3$ |
 | 24 | 1 | XOR des octets 0-23 |
 
 La gateway parse ce paquet comme le capteur, ajoute RSSI/SNR, JSON USB `{"type":"weights",...}`. L’agent poste `POST /api/fl/update`. Table `fl_updates` : `w0`…`w3`, `rssi`, `snr`, `seq`, `n_samples`, `round_id`.
@@ -131,7 +124,7 @@ Un `bad_header` (`node_id` 0).
 
 Poids (27 seulement) :
 
-| Nœud | Mises à jour | RSSI | SNR | \(w\) moyen approx. |
+| Nœud | Mises à jour | RSSI | SNR | $w$ moyen approx. |
 |------|----------------|------|-----|---------------------|
 | 1 | 197 | −63,7 dBm | +9,87 dB | (0,612 ; 0,312 ; 0,016 ; 0,027) |
 | 2 | 195 | −97,6 dBm | +1,48 dB | (0,599 ; 0,048 ; 0,080 ; 0,153) |
@@ -156,7 +149,7 @@ Perte sur le span de `seq` capteur (y compris un trou agent commun ~11 min, ~43-
 | Brut | 52 / 631 = 8,2 % | 116 / 631 = 18,4 % |
 | Hors trou commun | ~1 % | ~12 % (surtout des pertes d’1 paquet) |
 
-Les poids suivent ~1/4 des capteurs (147 vs 579/4 ; 131 vs 515/4). Le nœud faible ne « perd que les poids ». \(w_1\) ~ 0,31 (nœud 1) vs ~ 0,02 (nœud 2).
+Les poids suivent ~1/4 des capteurs (147 vs 579/4 ; 131 vs 515/4). Le nœud faible ne « perd que les poids ». $w_1$ ~ 0,31 (nœud 1) vs ~ 0,02 (nœud 2).
 
 CSV : `results/campagne-2026-08-31/`.
 
@@ -173,8 +166,8 @@ backend/app/fl_ingest.py
 database/schema.sql           table fl_updates
 ```
 
-Le dashboard v1 n’affiche pas les rounds ni les \(w\). Les poids sont en base et dans le JSON agent.
+Le dashboard v1 n’affiche pas les rounds ni les $w$. Les poids sont en base et dans le JSON agent.
 
 ## Ce que la v2 a montré
 
-Un client sain et un client en bord de couverture coexistent. Un SNR négatif reste souvent décodable. Quatre poids passent en 25 octets (v2) puis 27 octets (v3, `round_id`) sur le même canal que les DHT. Les \(w\) divergent avec la distribution locale de chaque nœud. L’agrégation et le downlink sont décrits dans [v3](../v3/V3_Rapport.md).
+Un client sain et un client en bord de couverture coexistent. Un SNR négatif reste souvent décodable. Quatre poids passent en 25 octets (v2) puis 27 octets (v3, `round_id`) sur le même canal que les DHT. Les $w$ divergent avec la distribution locale de chaque nœud. L’agrégation et le downlink sont décrits dans [v3](../v3/V3_Rapport.md).

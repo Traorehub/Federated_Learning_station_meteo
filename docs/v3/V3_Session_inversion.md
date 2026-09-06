@@ -38,7 +38,7 @@ Les absences du nœud 1 ne sont pas réparties au hasard dans le temps : les rou
 
 ## Erreur de prédiction
 
-Même méthode que la première session : chaque \(w\) est rejoué sur les températures mesurées dans les 15 min suivant la clôture, avec la persistance (\(T_t = T_{t-1}\)) comme référence, et seuls les triplets à `seq` consécutifs sont retenus. Sur 1412 lectures, **1200 triplets** exploitables — contre 319 le 4 septembre.
+Même méthode que la première session : chaque $w$ est rejoué sur les températures mesurées dans les 15 min suivant la clôture, avec la persistance ($T_t = T_{t-1}$) comme référence, et seuls les triplets à `seq` consécutifs sont retenus. Sur 1412 lectures, **1200 triplets** exploitables — contre 319 le 4 septembre.
 
 RMSE moyen, en degrés Celsius :
 
@@ -69,7 +69,9 @@ Les absences du nœud 1 ne sont pas réparties uniformément, et son erreur glob
 | 65 | 1,55 | 0,70 – 0,81 | ×2,0 |
 | 71 | 1,80 | 0,79 | ×2,3 |
 
-Le rapport reste entre 1,8 et 2,3 sur toute la session, y compris à la fin. La pénalité n’est donc pas absorbée par la dérive temporelle. Cette dérive elle-même n’est pas expliquée : l’écart de température entre les deux pièces a pu croître au cours de la journée, rendant la moyenne progressivement moins adaptée au nœud 1, mais rien ne l’établit ici.
+Le rapport reste entre 1,8 et 2,3 sur toute la session, y compris à la fin. La pénalité n’est donc pas absorbée par la dérive temporelle.
+
+Quant à la dérive elle-même, la [v4](../v4/V4_Rapport.md) en fournit une explication candidate : le modèle agrégé **n’a pas convergé**. Son coefficient $w_0$ passe de 0,5401 au round 45 à 0,3991 au round 106, de façon monotone et sans plateau. Ce n’est donc pas l’erreur qui dérive de façon inexpliquée, c’est le modèle qui n’avait pas fini de bouger.
 
 #### Portée de la pénalité : deux limites à ne pas taire
 
@@ -108,7 +110,9 @@ C’est une conclusion de méthode, et elle a une conséquence directe sur la v4
 
 Le résultat à retenir est le résultat **nul** sur le RSSI. Le versant positif est en partie définitionnel : rater un round, c’est précisément n’avoir pas livré son paquet de poids, si bien que « faible taux de réception » et « non-participation » sont presque la même observation. Dire que la réception prédit la participation n’apprend donc pas grand-chose ; ce qui surprend, c’est que le niveau de signal, lui, n’en dise rien.
 
-De la même façon, les 9,3 % de pertes du nœud proche sont *attribués* au half-duplex, mais cela n’est pas démontré : il faudrait vérifier que ces pertes coïncident bien avec les fenêtres d’émission de la gateway. Les séries de la v4 permettront de le faire.
+De la même façon, les 9,3 % de pertes du nœud proche sont *attribués* au half-duplex, mais cela n’est pas démontré : il faudrait vérifier que ces pertes coïncident bien avec les fenêtres d’émission de la gateway. Les séries de la v4 ne l’ont pas tranché non plus, faute d’horodatage des émissions de la gateway.
+
+En revanche la v4 explique le chiffre qui restait contradictoire ici. Le nœud 1 perd 17,5 % de ses paquets mais rate 37 % des rounds, et la raison n’est pas radio : un nœud n’émet ses poids qu’une fois par minute, si bien que **la fenêtre de timeout de 90 s ne contient qu’une seule occasion d’émettre**. Une perte unique reporte la réponse de 60 s et exclut le nœud sans seconde chance. Le protocole convertit donc chaque perte unitaire en exclusion complète. Détail dans le [rapport v4](../v4/V4_Rapport.md).
 
 ## L’hétérogénéité vient des capteurs, pas des pièces
 
@@ -123,7 +127,7 @@ Si l’écart venait des pièces, l’échange aurait dû échanger les valeurs 
 
 ### Décomposition des trois effets
 
-Deux choses ont bougé entre les sessions : les pièces **et** l’heure. Quatre mesures suffisent à les séparer. En notant \(A\) l’écart de calibration entre capteurs, \(B\) l’écart réel entre pièces et \(d\) le décalage dû à l’heure, les deux sessions donnent \(A + B = -4{,}1\) et \(A - B = -4{,}3\) (le signe de \(B\) s’inverse avec l’échange), et la somme des quatre mesures donne \(2d = +1{,}8\).
+Deux choses ont bougé entre les sessions : les pièces **et** l’heure. Quatre mesures suffisent à les séparer. En notant $A$ l’écart de calibration entre capteurs, $B$ l’écart réel entre pièces et $d$ le décalage dû à l’heure, les deux sessions donnent $A + B = -4{,}1$ et $A - B = -4{,}3$ (le signe de $B$ s’inverse avec l’échange), et la somme des quatre mesures donne $2d = +1{,}8$.
 
 | Cause | Contribution |
 |---|---|

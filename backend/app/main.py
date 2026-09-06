@@ -209,8 +209,19 @@ async def api_auto_state() -> dict:
 async def api_auto_configure(
     enabled: bool = Query(...),
     interval_s: int | None = Query(default=None, ge=60, le=3600),
+    timeouts: str | None = Query(
+        default=None,
+        description="Timeouts parcourus en boucle, séparés par des virgules "
+        "(« 90,120,150 » alterne les trois d'un round au suivant).",
+    ),
 ) -> dict:
-    return auto_runner.configure(enabled, interval_s)
+    liste: list[int] | None = None
+    if timeouts:
+        try:
+            liste = [int(t) for t in timeouts.split(",") if t.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="timeouts : entiers séparés par des virgules")
+    return auto_runner.configure(enabled, interval_s, liste)
 
 
 @app.get("/api/fl/errors")

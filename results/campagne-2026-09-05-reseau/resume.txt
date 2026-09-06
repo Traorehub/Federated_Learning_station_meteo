@@ -1,0 +1,95 @@
+Session reseau (v4) — historisation de la liaison
+Rounds 72 a 106, 5 sept. 15:58 -> 19:35 UTC, serie automatique a 5 min.
+Placement identique a la session d'inversion : noeud 1 (WROOM) piece
+eloignee, noeud 2 (S3) a ~2 m, les deux a 14 dBm.
+Export PostgreSQL VPS. Lectures capteur exportees de 15:45 a 19:40 UTC
+(marge avant le round 72 pour disposer des triplets precedents).
+
+--- Fichiers ---
+fl_rounds.csv    35 rounds (72 a 106)
+fl_updates.csv   374 paquets de poids, tagues par round
+readings.csv     1584 lectures capteur de la fenetre
+latence.csv      latence par round et par noeud + nb de paquets recus
+node_stats.csv   compteurs cumules (packets_missing = wrap de seq, non
+                 exploitable, voir V1/V3)
+
+--- Qualite de liaison (seaux de 15 min complets) ---
+noeud  reception  RSSI moyen  SNR moyen  paquets corrompus
+  1       83 %      -94 dBm     +4,7 dB         0
+  2       87 %      -61 dBm     +9,1 dB         0
+
+ZERO paquet corrompu sur toute la fenetre : quand un paquet arrive, il
+arrive intact. La degradation est binaire, jamais partielle. Coherent avec
+le biais du survivant de la session d'inversion.
+
+--- Latence : verrouillee sur l'horloge des noeuds ---
+noeud  latence mediane  ecart-type  hors delai
+  1        46,1 s          0,4 s      4 / 33
+  2        38,7 s         0,25 s      1 / 33
+
+Un quart de seconde de dispersion : ce n'est pas de la radio, c'est une
+horloge. Les creneaux mesures dans la minute :
+  noeud 1 : capteur a :06 :21 :36 :51 — poids a ~:07
+  noeud 2 : capteur a :14 :29 :44 :59 — poids a ~:00
+Le decalage de 200 ms par noeud vient du delay(200U * NODE_ID) du firmware.
+
+PREUVE que c'est l'horloge des noeuds qui fixe la cloture, pas le serveur :
+la serie a ete interrompue 51 min pendant le deploiement de la v4 (round 74
+a 16:08, round 75 a 16:59) et a repris a une phase differente.
+  rounds 45-74 : ouverture a :12  ->  duree predite 55 s,  mesuree 55-57 s
+  rounds 75-106: ouverture a :22  ->  duree predite 45 s,  mesuree 45-48 s
+La duree d'un round n'est que l'attente jusqu'au prochain creneau du noeud 1.
+L'instant de cloture reste a ~:08 de la minute quelle que soit l'ouverture.
+
+Le round 74, reste courant pendant 51 min, a recu 43 et 40 paquets de poids
+=> confirme la cadence d'une emission par minute et par noeud.
+
+--- LE SIGNAL start_round NE DECLENCHE AUCUNE REPONSE ---
+Espacement reel des paquets dans un round (round 95) :
+  noeud 1 : t+45,4  105,2  165,4  225,3  285,4  (ecarts 59,9 / 60,1 / ...)
+  noeud 2 : t+38,3   98,6  158,0  218,4  278,2
+Exactement 60 s, 5 paquets par round (cycle de 5 min). Jamais rien dans les
+premieres secondes, sur 33 rounds x 2 noeuds. Les ecarts de 119,8 s sont des
+pertes unitaires (une emission ratee = deux cycles).
+
+Le firmware appelle pourtant fl_train() + sendWeights() des la reception de
+start_round. Le round_id des poids est correct, donc les noeuds ENTENDENT
+bien le signal (le serveur ne re-tague pas : POST /api/fl/update reprend le
+round_id du paquet). Mais la reponse immediate n'arrive jamais.
+Cause non etablie. Piste : la voie immediate de pollDownlink() n'a pas le
+decalage par noeud que possede la voie periodique, donc les deux noeuds
+repondent au meme instant. Le journal serie d'un noeud tranchera.
+
+--- CONSEQUENCE STRUCTURELLE : une seule occasion par fenetre ---
+Round ouvert a :22, timeout 90 s => limite a :52 de la minute suivante.
+Creneaux du noeud 1 dans cet intervalle : +45 s, puis +105 s.
+IL N'Y EN A QU'UN SEUL. Une perte de paquet = exclusion garantie, sans
+seconde chance. Idem noeud 2 (38 + 60 = 98 s > 90).
+Les 4 depassements du noeud 1 valent 105-114 s, le seul du noeud 2 vaut
+99,1 s : toujours la latence normale + un cycle de 60 s.
+
+C'est ce qui reconcilie 17 % de perte paquet avec 37 % d'exclusions sur la
+session d'inversion. Ce n'est pas la radio qui est deux fois plus mauvaise :
+c'est le protocole qui convertit chaque perte unitaire en exclusion totale.
+Pour tolerer une perte, le timeout devrait depasser 105 s.
+
+--- Derive du modele global ---
+Entre les rounds 45 et 106, w0 passe de 0,540 a 0,399 et w3 de 0,061 a
+0,159, de facon monotone. Le modele agrege N'A PAS CONVERGE sur ~5 h.
+Candidat pour expliquer la derive de l'erreur globale du noeud 1
+(0,37 -> 0,79) notee comme inexpliquee dans V3_Session_inversion.md.
+
+--- Derive de la cadence serveur ---
+La periode reelle de la serie automatique est de 300,07 s, pas 300 s. Les
+deux noeuds voient donc leur latence decroitre de ~1,7 s sur 31 rounds, du
+meme montant : c'est l'ordonnancement du serveur qui derive, pas les
+quartz des noeuds (ils sont independants et derivent a l'identique).
+
+--- Menage effectue en base ---
+La serie automatique n'avait pas ete arretee : elle a lance 188 rounds a
+vide entre le 5 sept. 19:35 (derniere lecture, materiel debranche et agent
+ferme) et le 6 sept. 11:14. Supprimes, avec leurs 188 commandes orphelines.
+Les lectures capteur n'ont PAS ete polluees : agent ferme = aucune ingestion.
+Conserves : 6 rounds vides ANTERIEURS (ids 3, 27, 28, 29, 103, 104) qui sont
+de vrais timeouts, materiel branche.
+Reste en base : 106 rounds (100 reels + 6 vides legitimes), 1500 poids.

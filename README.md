@@ -16,7 +16,7 @@
 
 Prototype pédagogique. Deux nœuds ESP32 distants (capteur DHT11 et radio LoRa RA-02) communiquent avec une gateway Arduino Uno. Un PC, placé entre la radio et le serveur, transmet les paquets vers le backend que chacun déploie. Le dashboard permet de vérifier que la liaison radio fonctionne réellement.
 
-**État actuel du code.** La chaîne de communication (**v1**) est opérationnelle. Les nœuds entraînent **localement** un régresseur linéaire minuscule et envoient les poids par LoRa (table `fl_updates`). L’**agrégation FedAvg** (moyenne pondérée des modèles et renvoi du modèle global en LoRa) est exécutée par l’API (`fl_rounds`, vue dashboard `#rounds`).
+Les versions v1 à v5 du banc sont réalisées : chaîne LoRa, agrégation FedAvg et renvoi de $w_{\text{global}}$, mesure de l’erreur de prédiction, comparaison des timeouts. Synthèse : [docs/BILAN.md](docs/BILAN.md).
 
 Il n’existe pas d’instance publique maintenue en continu. Chaque personne déploie le serveur chez elle (Docker en local, VPS ou nom de domaine personnel) et peut l’arrêter à tout moment.
 
@@ -30,8 +30,8 @@ Câbler, alimenter, flasher, lire un capteur, établir un lien LoRa. Cette étap
 **2. Partager un banc reproductible.**  
 Le firmware, le câblage et le dashboard sont documentés pour qu’une autre personne puisse refaire le montage **avec son matériel et son serveur**. Licence MIT. L’intérêt n’est pas un site d’auteur accessible en permanence, mais la possibilité de reproduire l’expérience.
 
-**3. Poser l’instrument pour le Federated Learning.**  
-Lorsque la radio et l’ingestion sont stables, le même banc sert à l’apprentissage fédéré : entraînement local sur les nœuds, puis agrégation de type FedAvg (McMahan et al., 2017), comparaison synchrone / asynchrone, et mesure de l’effet du réseau LoRa sur le modèle (pertes, latence, nœuds absents). Sans la couche de communication, les expériences FL ne pourraient pas relier leurs résultats au canal radio.
+**3. Examiner FedAvg sous contrainte LoRa.**  
+Entraînement local, agrégation synchrone (McMahan et al., 2017), évaluation de l’erreur sur les lectures postérieures à chaque round. L’objet est le comportement de la moyenne lorsque le lien est imparfait (pertes, SNR faible, client hors délai) et lorsque les distributions locales diffèrent.
 
 ## Prérequis
 
@@ -143,50 +143,44 @@ Un banc limité au Serial Monitor reste difficile à relire et à partager. D’
 | **v2** | Entraînement local + transport des poids sur LoRa | **Réalisée** (table `fl_updates`) |
 | **v3** | FedAvg synchrone : moyenne serveur, modèle global renvoyé, erreur de prédiction mesurée, contrôle par échange des rôles | **Réalisée** (`fl_rounds`, vue `#rounds`) |
 | **v4** | Taux de réception, RSSI et latence dans le temps | **Réalisée** (`/api/network/*`, vue `#reseau`) |
-| **v5** | Variation du spreading factor, asynchrone, plus de deux clients | Plus tard |
+| **v5** | Comparaison des timeouts 90 s, 120 s et 150 s | **Réalisée** ([rapport](docs/v5/V5_Rapport.md)) |
+| **Synthèse** | Résultats et limites | [docs/BILAN.md](docs/BILAN.md) |
 
-FedAvg **synchrone** : le serveur envoie un signal de début de round, et les nœuds qui participent s’entraînent dans la même fenêtre. Ce mode est plus simple à déboguer. L’asynchrone (chaque nœud envoie selon sa radio) est plus réaliste en LoRa ; il est prévu après le FedAvg sync.
+Le serveur ouvre chaque round. Les nœuds émettent leurs poids une fois par minute ; aucune réponse immédiate à `start_round` n’a été observée. Un nœud hors délai n’entre pas dans la moyenne.
 
-Capture en continu (DHT toutes les 15 s, tampon local de 32 échantillons). L’entraînement local (SGD) tourne sur ce tampon. L’agrégation fédérée a lieu **lorsque** un round est clos côté serveur (`POST /api/fl/rounds`, timeout 90 s). Un nœud absent n’entre pas dans la somme.
+La capture est continue (DHT toutes les 15 s, tampon de 32 échantillons). L’entraînement local (SGD) s’exécute sur ce tampon. L’agrégation a lieu à la clôture (`POST /api/fl/rounds`, timeout de 90 s par défaut ; la série automatique peut alterner 90 s, 120 s et 150 s).
+
+### Résultats principaux
+
+À deux clients, le modèle global demeure défini lorsqu’un nœud est absent ; l’erreur de prédiction pour ce nœud est alors 1,7 à 1,9 fois plus élevée. L’échange des pièces, à puissance égale, reproduit le facteur sur le nouveau nœud éloigné. Le RSSI moyen ne prédit pas l’exclusion ; le taux de réception le fait. Avec un timeout de 90 s, une perte de paquet unique suffit à exclure un client, car la fenêtre ne contient qu’un créneau d’émission. Sur le même trafic, un timeout de 120 s porte la part de rounds à deux participants de 84 % à 98 %. Le détail et les limites figurent dans [docs/BILAN.md](docs/BILAN.md).
 
 ## Apprentissage fédéré et FedAvg
 
-Le Federated Learning vise à entraîner un modèle **sans centraliser les données brutes**. Chaque client \(k\) minimise une perte locale \(F_k\) sur son jeu \(D_k\) (ici : mesures DHT11 qui **restent sur l’ESP32**). Seuls les **paramètres** circulent.
+Le Federated Learning vise à entraîner un modèle **sans centraliser les données brutes**. Chaque client $k$ minimise une perte locale $F_k$ sur son jeu $D_k$ (ici : mesures DHT11 qui **restent sur l’ESP32**). Seuls les **paramètres** circulent.
 
-L’algorithme retenu est **Federated Averaging** (FedAvg), introduit par McMahan, Moore, Ramage, Hampson et y Arcas (2017) dans *Communication-Efficient Learning of Deep Networks from Decentralized Data* (AISTATS, PMLR 54). Après un round \(t\), le serveur forme le modèle global par **moyenne pondérée** par la taille des jeux locaux \(n_k = |D_k|\) :
+L’algorithme retenu est **Federated Averaging** (FedAvg), introduit par McMahan, Moore, Ramage, Hampson et y Arcas (2017) dans *Communication-Efficient Learning of Deep Networks from Decentralized Data* (AISTATS, PMLR 54). Après un round $t$, le serveur forme le modèle global par **moyenne pondérée** par la taille des jeux locaux $n_k = |D_k|$ :
 
-$$
-w_{t+1} \;\leftarrow\; \sum_{k=1}^{K} \frac{n_k}{n}\, w_{t+1}^{(k)}
-\quad\text{avec}\quad
-n = \sum_{k=1}^{K} n_k .
-$$
+$$ w_{t+1} \;\leftarrow\; \sum_{k=1}^{K} \frac{n_k}{n}\, w_{t+1}^{(k)} \quad\text{avec}\quad n = \sum_{k=1}^{K} n_k . $$
 
-\(K = 2\) sur ce banc. Un nœud absent (timeout LoRa) n’entre pas dans la somme : c’est précisément le cas expérimental du client en bord de couverture.
+$K = 2$ sur ce banc. Un nœud absent (timeout LoRa) n’entre pas dans la somme : c’est précisément le cas expérimental du client en bord de couverture.
 
 ### Modèle embarqué (déjà en firmware)
 
-Régresseur linéaire, quatre coefficients. On prédit la température au pas suivant à partir des deux températures précédentes et de l’humidité précédente (entrées normalisées \(T/50\), \(H/100\)) :
+Régresseur linéaire, quatre coefficients. On prédit la température au pas suivant à partir des deux températures précédentes et de l’humidité précédente (entrées normalisées $T/50$, $H/100$) :
 
-$$
-\frac{\hat{T}_t}{50}
-=
-w_0\,\frac{T_{t-1}}{50}
-+ w_1\,\frac{T_{t-2}}{50}
-+ w_2\,\frac{H_{t-1}}{100}
-+ w_3 .
-$$
+$$ \frac{\hat{T}_t}{50} = w_0\,\frac{T_{t-1}}{50} + w_1\,\frac{T_{t-2}}{50} + w_2\,\frac{H_{t-1}}{100} + w_3 . $$
 
-Le vecteur \(w = (w_0,w_1,w_2,w_3)\) part en LoRa (27 octets avec `round_id` ; la forme 25 octets reste acceptée). **FedAvg moyenne ces quatre composantes** entre nœuds, puis renvoie \(w_{\text{global}}\) en downlink LoRa. Côté API : `POST /api/fl/rounds` et table `fl_rounds`. Vue dashboard : `#rounds`.
+Le vecteur $w = (w_0,w_1,w_2,w_3)$ part en LoRa (27 octets avec `round_id` ; la forme 25 octets reste acceptée). **FedAvg moyenne ces quatre composantes** entre nœuds, puis renvoie $w_{\text{global}}$ en downlink LoRa. Côté API : `POST /api/fl/rounds` et table `fl_rounds`. Vue dashboard : `#rounds`.
 
 ### Déroulement d’un round
 
-Le round est **piloté par le serveur**, ce qui rend le timing reproductible :
+Le round est **ouvert par le serveur**, ce qui rend le timing reproductible — mais la mesure a montré que c’est la cadence d’émission des nœuds qui décide de sa clôture, non le signal de départ (voir [v4](docs/v4/V4_Rapport.md)) :
 
 1. Ouverture d’un round côté API (`POST /api/fl/rounds`), qui met en file une commande `start_round`.
 2. L’agent PC lit cette commande et l’écrit sur le port série ; la gateway l’émet en LoRa (paquet 8 octets). La commande est **retransmise toutes les ~2,5 s** : à 400 ms, la gateway s’entendait elle-même et enregistrait des `bad_header`.
 3. Le nœud qui entend le signal note le `round_id`, entraîne son modèle sur son tampon, et renvoie ses quatre poids (27 octets). Les nœuds **écoutent en continu** : une fenêtre de 400 ms après chaque envoi capteur laissait passer la plupart des `start_round`.
-4. Dès que **deux nœuds distincts** ont répondu, ou au **timeout de 90 s**, le serveur calcule la moyenne pondérée, l’enregistre dans `fl_rounds` et la diffuse (paquet 25 octets, type `0x30`).
-5. Chaque nœud qui reçoit \(w_{\text{global}}\) **remplace** son vecteur local et poursuit son SGD à partir de là.
+4. Dès que **deux nœuds distincts** ont répondu, ou au timeout (90 s par défaut), le serveur calcule la moyenne pondérée, l’enregistre dans `fl_rounds` et la diffuse (paquet 25 octets, type `0x30`).
+5. Chaque nœud qui reçoit $w_{\text{global}}$ **remplace** son vecteur local et poursuit son SGD à partir de là.
 
 Les poids envoyés hors round (`round_id = 0`, émission périodique de la v2) sont stockés mais **exclus** de l’agrégation.
 
@@ -201,7 +195,7 @@ Deux pièces, même gateway Uno. Nœud 1 (WROOM-32D) près de la gateway (lien t
 | 1 | 995 | 197 | −62,3 dBm | 9,77 dB | 24,9 °C | 63,1 % |
 | 2 | 1082 | 195 | −83,9 dBm | 3,78 dB | 28,6 °C | 54,8 % |
 
-Un seul `bad_header` (`node_id` 0). En phase « pièce distante », le nœud 2 a été observé vers **−100 dBm** avec un SNR parfois **négatif**, tout en restant décodable (`ok = true`). Les deux vecteurs \(w\) locaux divergent : chaque nœud apprend **sa** distribution locale (données non i.i.d.). C’est le régime pour lequel FedAvg est conçu.
+Un seul `bad_header` (`node_id` 0). En phase « pièce distante », le nœud 2 a été observé vers **−100 dBm** avec un SNR parfois **négatif**, tout en restant décodable (`ok = true`). Les deux vecteurs $w$ locaux divergent : chaque nœud apprend **sa** distribution locale (données non i.i.d.). C’est le régime pour lequel FedAvg est conçu.
 
 Le nœud proche n’est **pas** un défaut : c’est le client qui répond de façon fiable. Le nœud loin teste la fédération sous contrainte radio.
 
@@ -235,11 +229,11 @@ Les cinq premiers rounds relèvent de la mise au point de l’écoute downlink ;
 
 ### Cas 1 : les deux clients entrent dans la moyenne
 
-Le nœud distant est mesuré entre **−105 et −109 dBm** avec un SNR **négatif**, et ses poids arrivent quand même. Le témoin reste à ~ **−80 à −93 dBm**, SNR ~ **+10 dB**. Les deux tampons sont pleins (\(n_k = 32\)), donc la moyenne est équipondérée.
+Le nœud distant est mesuré entre **−105 et −109 dBm** avec un SNR **négatif**, et ses poids arrivent quand même. Le témoin reste à ~ **−80 à −93 dBm**, SNR ~ **+10 dB**. Les deux tampons sont pleins ($n_k = 32$), donc la moyenne est équipondérée.
 
-Exemple de round complet, vecteurs \(w = (w_0, w_1, w_2, w_3)\) :
+Exemple de round complet, vecteurs $w = (w_0, w_1, w_2, w_3)$ :
 
-| Origine | \(w_0\) | \(w_1\) | \(w_2\) | \(w_3\) | Lien |
+| Origine | $w_0$ | $w_1$ | $w_2$ | $w_3$ | Lien |
 |---------|---------|---------|---------|---------|------|
 | Nœud 1 (témoin) | 0,6309 | 0,0575 | 0,0635 | 0,1042 | −80 dBm, +10,0 dB |
 | Nœud 2 (distant) | 0,6330 | 0,0660 | 0,0778 | 0,1219 | −105 dBm, −3,5 dB |
@@ -247,7 +241,7 @@ Exemple de round complet, vecteurs \(w = (w_0, w_1, w_2, w_3)\) :
 
 Chaque composante du modèle global tombe **entre** les deux vecteurs locaux : c’est bien une moyenne, pas une recopie du client le mieux reçu. L’écart entre les deux clients est systématique et non nul, parce que leurs distributions locales diffèrent (données non i.i.d.) :
 
-| Round | \(w_1\) nœud 1 | \(w_1\) nœud 2 | \(w_1\) global | Écart entre clients |
+| Round | $w_1$ nœud 1 | $w_1$ nœud 2 | $w_1$ global | Écart entre clients |
 |-------|----------------|----------------|----------------|---------------------|
 | 6 | 0,0537 | 0,0642 | 0,0584 | 0,0105 |
 | 7 | 0,0540 | 0,0614 | 0,0584 | 0,0074 |
@@ -256,7 +250,7 @@ Chaque composante du modèle global tombe **entre** les deux vecteurs locaux : c
 | 16 | 0,0552 | 0,0647 | 0,0599 | 0,0095 |
 | 19 | 0,0575 | 0,0660 | 0,0613 | 0,0085 |
 
-Le poids sur l’humidité (\(w_2\)) est celui qui sépare le plus les deux clients (~0,064 contre ~0,078) : le nœud 2 relève une température plus élevée et une humidité plus basse, et son modèle en tient compte davantage. C’est exactement l’hétérogénéité que FedAvg doit absorber. Son origine — les capteurs plutôt que les pièces — est établie plus loin, par [échange des rôles](#contrôle-par-échange-des-rôles).
+Le poids sur l’humidité ($w_2$) est celui qui sépare le plus les deux clients (~0,064 contre ~0,078) : le nœud 2 relève une température plus élevée et une humidité plus basse, et son modèle en tient compte davantage. C’est exactement l’hétérogénéité que FedAvg doit absorber. Son origine — les capteurs plutôt que les pièces — est établie plus loin, par [échange des rôles](#contrôle-par-échange-des-rôles).
 
 ### Cas 2 : le client distant est exclu du round
 
@@ -264,15 +258,15 @@ Trois rounds se sont clos au timeout avec un seul participant. Le modèle global
 
 | Round | Participants | Modèle global | Ce qui est arrivé au nœud 2 |
 |-------|--------------|---------------|------------------------------|
-| 10 | nœud 1 seul | \(w_1 = 0{,}0532\) (= témoin) | poids reçus **après** la clôture, à −108 dBm |
-| 11 | nœud 1 seul | \(w_1 = 0{,}0532\) | aucun poids pour ce round |
-| 14 | nœud 1 seul | \(w_1 = 0{,}0541\) | aucun poids pour ce round |
+| 10 | nœud 1 seul | $w_1 = 0{,}0532$ (= témoin) | poids reçus **après** la clôture, à −108 dBm |
+| 11 | nœud 1 seul | $w_1 = 0{,}0532$ | aucun poids pour ce round |
+| 14 | nœud 1 seul | $w_1 = 0{,}0541$ | aucun poids pour ce round |
 
 Le round 10 est le plus instructif : le client distant n’était pas hors service, il était **hors délai**. Ses paquets figurent dans `fl_updates` avec le bon `round_id`, mais après `closed_at`, donc hors de la somme. La distinction « client injoignable » / « client trop lent » est ainsi tracée, ce qu’un FedAvg simulé ne permettrait pas.
 
 ### Ce que vaut le modèle produit
 
-Comparer des vecteurs de poids ne dit pas si le modèle **prédit** bien. Chaque \(w\) a donc été rejoué sur les températures réellement mesurées dans les quinze minutes **suivant** la clôture du round, puis comparé à la prédiction triviale dite de persistance — annoncer que la température ne changera pas. Un triplet de lectures n’est retenu que si ses `seq` se suivent : un paquet perdu l’écarte de l’évaluation.
+Comparer des vecteurs de poids ne dit pas si le modèle **prédit** bien. Chaque $w$ a donc été rejoué sur les températures réellement mesurées dans les quinze minutes **suivant** la clôture du round, puis comparé à la prédiction triviale dite de persistance — annoncer que la température ne changera pas. Un triplet de lectures n’est retenu que si ses `seq` se suivent : un paquet perdu l’écarte de l’évaluation.
 
 Erreur quadratique moyenne, en degrés Celsius :
 
@@ -337,9 +331,48 @@ L’heure n’explique que le décalage **commun** aux deux nœuds, qui ne modif
 
 Cela n’affaiblit pas le dispositif : les distributions locales restent différentes, FedAvg y est bien confronté et le *client drift* mesuré est réel. Seule la cause change — et l’on peut soutenir qu’elle est plus représentative, car dans un parc IoT déployé des capteurs bon marché dérivent chacun de leur côté.
 
-### Ce qui n’est pas encore mesuré
+## Ce qui exclut réellement un client d’un round
 
-La variation contrôlée du spreading factor, le mode asynchrone, et le passage à un nombre de clients supérieur à deux — ce dernier point étant nécessaire pour savoir ce que devient la pénalité quand la moyenne ne repose plus sur un seul survivant.
+Les deux sessions précédentes établissent qu’un client exclu reçoit un modèle moins précis, et qu’un lien dégradé l’exclut plus souvent. Restait un chiffre inexpliqué : le nœud éloigné perd 17 % de ses paquets, mais rate 37 % des rounds. L’historisation de la liaison et de la latence lève la contradiction. Rapport détaillé : [docs/v4/V4_Rapport.md](docs/v4/V4_Rapport.md).
+
+| Nœud | Réception | RSSI moyen | Paquets corrompus | Latence médiane | Écart-type |
+|------|-----------|------------|-------------------|-----------------|------------|
+| 1 (éloigné) | 83 % | −94 dBm | **0** | 45,9 s | 0,66 s |
+| 2 (proche) | 87 % | −61 dBm | **0** | 38,6 s | 0,89 s |
+
+**Aucun paquet corrompu sur 3 h 40.** Quand un paquet arrive, il arrive intact : la dégradation est binaire, jamais partielle. C’est le pendant mécanique du biais du survivant — il n’existe pas de paquet à demi reçu dont le RSSI pourrait témoigner.
+
+**La latence ne mesure pas la radio, elle mesure un écart de phase.** Moins d’une seconde de dispersion sur une trentaine de rounds : un nœud n’émet ses poids qu’une fois par minute, sur une horloge interne que rien ne resynchronise, et la latence est simplement l’attente jusqu’à son prochain créneau. Une interruption fortuite de 51 minutes l’a démontré en décalant la phase d’ouverture des rounds de dix secondes : la durée des rounds est passée de 55 à 45 secondes, exactement comme prédit, tandis que l’instant de clôture restait fixé au même moment de la minute. Le serveur ouvre le round, les nœuds décident quand il se ferme.
+
+**La fenêtre de timeout ne contient qu’une seule occasion d’émettre.** Avec une réponse normale à 45 s, un cycle d’émission de 60 s et un timeout de 90 s, il n’y a pas de seconde chance : la perte d’un unique paquet de poids reporte la réponse à 105 s et exclut le nœud. Les cinq dépassements observés valent 99, 105, 107, 109 et 114 secondes — toujours la latence normale plus un cycle, jamais autre chose.
+
+Voilà les 17 % contre 37 % réconciliés. La radio n’est pas deux fois plus mauvaise que mesurée : le protocole convertit chaque perte unitaire en exclusion complète, sans amortissement. Le lien entre dégradation radio et dégradation du modèle passe donc par un intermédiaire qui n’avait pas été identifié.
+
+Deux résultats secondaires méritent mention. Le modèle agrégé **n’a pas convergé** en cinq heures — $w_0$ perd un quart de sa valeur sans plateau — ce qui invite à la prudence sur toute lecture d’un modèle global comme d’un état stable, et fournit une explication candidate à la dérive d’erreur relevée plus haut. Et le signal `start_round` **ne déclenche aucune réponse** : les poids arrivent toujours au créneau périodique, jamais dans les secondes suivant l’ouverture, alors que le firmware est censé répondre immédiatement. La cause n’est pas établie ; elle n’était pas nécessaire pour tester la fenêtre.
+
+### Comparaison des timeouts (v5)
+
+Les timeouts 90 s, 120 s et 150 s ont été alternés au sein d’une même session, sans modification du firmware ni du placement. Rapport : [docs/v5/V5_Rapport.md](docs/v5/V5_Rapport.md). Données : `results/campagne-2026-09-06-timeout/`.
+
+L’analyse retient la phase de liaison stable (45 rounds, 15 par fenêtre). Une dégradation ultérieure du nœud éloigné, où la réception tombe à quelques pourcents, n’est compensée par aucune des trois valeurs.
+
+| Timeout | Rounds à deux participants (phase stable) |
+|---------|-------------------------------------------|
+| 90 s | 13 / 15 (87 %) |
+| 120 s | 14 / 15 (93 %) |
+| 150 s | 15 / 15 (100 %) |
+
+Rejeu des mêmes latences sous une règle unique :
+
+| Timeout | Rounds à deux participants |
+|---------|----------------------------|
+| 90 s | 84 % |
+| 120 s | 98 % |
+| 150 s | 98 % |
+
+Les arrivées de second créneau se situent entre 107 s et 116 s. Les timeouts de 120 s et 150 s sont donc équivalents sur ce banc ; le seuil correspond à un cycle d’émission supplémentaire (environ 115 s). Une arrivée à 174 s, après deux pertes consécutives, demeure hors des deux fenêtres longues.
+
+La variation contrôlée du spreading factor, le mode asynchrone et un effectif supérieur à deux clients sortent du périmètre de ce banc.
 
 ## Chaîne
 
@@ -367,7 +400,7 @@ La variation contrôlée du spreading factor, le mode asynchrone, et le passage 
 
 MQTT pourra être envisagé plus tard, si un nœud doit joindre le cloud **sans** PC intermédiaire. Ce n’est pas le cas de ce banc.
 
-Paquet capteur LoRa (14 octets, v1) : `node_id`, `seq`, température, humidité, uptime, checksum. Paquet **poids** (27 octets) : les quatre coefficients \(w_i\) et le `round_id`. La gateway ajoute RSSI et SNR (mesurés par le SX1278 **à la réception**). Un `bad_header` est enregistré avec `node_id` 0 : paquet **corrompu**, pas un trou de `seq`.
+Paquet capteur LoRa (14 octets, v1) : `node_id`, `seq`, température, humidité, uptime, checksum. Paquet **poids** (27 octets) : les quatre coefficients $w_i$ et le `round_id`. La gateway ajoute RSSI et SNR (mesurés par le SX1278 **à la réception**). Un `bad_header` est enregistré avec `node_id` 0 : paquet **corrompu**, pas un trou de `seq`.
 
 Détail radio et broches : [docs/LORA.md](docs/LORA.md), [docs/HARDWARE.md](docs/HARDWARE.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -429,7 +462,7 @@ Un clic sur le GIF ouvre la vidéo complète (MP4).
 | `agent/serial_bridge.py` | Lit le port COM, POST `/api/ingest` et `/api/fl/update`, relaie `start_round` et le modèle global |
 | FastAPI + Uvicorn | Ingest capteur, ingest poids, rounds FedAvg (manuels ou en série), erreur de prédiction, historique de liaison, overview, WebSocket `/ws/live` |
 | PostgreSQL 16 | `readings`, `node_stats`, `fl_updates`, `fl_rounds` |
-| React (Vite) | Cartes nœuds (liaison) ; vue `#rounds` (participants, \(w\) global, RMSE par nœud) ; vue `#reseau` (taux de réception, RSSI et latence dans le temps) |
+| React (Vite) | Cartes nœuds (liaison) ; vue `#rounds` (participants, $w$ global, RMSE par nœud) ; vue `#reseau` (taux de réception, RSSI et latence dans le temps) |
 | Docker / nginx | Reverse proxy. Brancher un domaine personnel ou un tunnel si besoin |
 
 ## Structure du dépôt
@@ -472,11 +505,17 @@ Déploiement (local ou VPS personnel) : [docs/DEPLOY.md](docs/DEPLOY.md).
 
 | Fichier | Contenu |
 |---------|---------|
-| [docs/HARDWARE.md](docs/HARDWARE.md) | Broches, couleurs, convertisseur de niveaux |
-| [docs/LORA.md](docs/LORA.md) | Format paquet, SF / BW / CR |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Sync vs async, v1 / v2 / v3 |
+| [docs/BILAN.md](docs/BILAN.md) | Synthèse des résultats, v1 à v5 |
+| [docs/INTRODUCTION.md](docs/INTRODUCTION.md) | Question, versions, liens |
+| [docs/v1/V1_Rapport.md](docs/v1/V1_Rapport.md) | Chaîne comms |
+| [docs/v2/V2_Rapport.md](docs/v2/V2_Rapport.md) | Poids locaux, artefacts de perte |
 | [docs/v3/V3_Rapport.md](docs/v3/V3_Rapport.md) | FedAvg, paquets, rounds |
 | [docs/v3/V3_Session_inversion.md](docs/v3/V3_Session_inversion.md) | Échange des rôles, pénalité, biais du survivant |
+| [docs/v4/V4_Rapport.md](docs/v4/V4_Rapport.md) | Historique de liaison, latence, fenêtre de timeout |
+| [docs/v5/V5_Rapport.md](docs/v5/V5_Rapport.md) | Alternance 90 / 120 / 150 s |
+| [docs/HARDWARE.md](docs/HARDWARE.md) | Broches, couleurs, convertisseur de niveaux |
+| [docs/LORA.md](docs/LORA.md) | Format paquet, SF / BW / CR |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Sync vs async, versions |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Docker, tunnel optionnel |
 
 ## Références

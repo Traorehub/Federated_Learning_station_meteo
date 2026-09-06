@@ -15,14 +15,14 @@ export async function fetchOverview(): Promise<Overview> {
 }
 
 export async function fetchRounds(): Promise<FlRound[]> {
-  const res = await fetch('/api/fl/rounds')
+  const res = await fetch('/api/fl/rounds?limit=100')
   if (!res.ok) throw new Error(`rounds ${res.status}`)
   const data: { rounds: FlRound[] } = await res.json()
   return data.rounds ?? []
 }
 
 export async function fetchRoundErrors(): Promise<FlErrors> {
-  const res = await fetch('/api/fl/errors')
+  const res = await fetch('/api/fl/errors?limit=100')
   if (!res.ok) throw new Error(`errors ${res.status}`)
   return res.json()
 }
@@ -45,9 +45,14 @@ export async function fetchAuto(): Promise<FlAuto> {
   return res.json()
 }
 
-export async function setAuto(enabled: boolean, intervalS?: number): Promise<FlAuto> {
+export async function setAuto(
+  enabled: boolean,
+  intervalS?: number,
+  timeouts?: number[],
+): Promise<FlAuto> {
   const params = new URLSearchParams({ enabled: String(enabled) })
   if (intervalS != null) params.set('interval_s', String(intervalS))
+  if (timeouts?.length) params.set('timeouts', timeouts.join(','))
   const res = await fetch(`/api/fl/auto?${params}`, { method: 'POST' })
   if (!res.ok) throw new Error(`auto ${res.status}`)
   return res.json()

@@ -88,6 +88,13 @@ export type FlAuto = {
   enabled: boolean
   interval_s: number
   min_interval_s: number
+  /** Timeouts parcourus en boucle : un seul = fenêtre fixe, plusieurs = alternance. */
+  timeouts: number[]
+  next_timeout_s: number | null
+  last_timeout_s: number | null
+  stop_after_empty: number
+  /** Renseigné quand la série s'est coupée seule, faute de participant. */
+  stopped_reason: string | null
   rounds_started: number
   last_round_at: string | null
   next_in_s: number | null

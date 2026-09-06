@@ -78,7 +78,7 @@ Commandes USB vers la gateway :
 G 1 600000 300000 0 0
 ```
 
-`G` : modèle global, virgule fixe int32 (\(10^6\)). L’agent retransmet chaque
+`G` : modèle global, virgule fixe int32 ($10^6$). L’agent retransmet chaque
 commande toutes les ~2,5 s ; les nœuds écoutent en continu (la fenêtre de
 400 ms de la v2 laissait passer le signal). Détail FedAvg : [v3](v3/V3_Rapport.md).
 

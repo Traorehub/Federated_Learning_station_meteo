@@ -185,6 +185,16 @@ h1 {
   background: var(--lamp);
 }
 
+.btn-auto.v5 {
+  border-color: var(--ok, #6ee7b7);
+  color: var(--ok, #6ee7b7);
+}
+
+.btn-auto.v5.on {
+  color: var(--bg);
+  background: var(--ok, #6ee7b7);
+}
+
 .auto-interval {
   display: inline-flex;
   align-items: center;

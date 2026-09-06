@@ -1,6 +1,6 @@
 # v3 : FedAvg sur LoRa
 
-La v2 fait monter les vecteurs \(w^{(k)}\) jusqu’à Postgres. La v3 les **agrège** (FedAvg) et **renvoie** un modèle global aux nœuds, sur le même LoRa. Le dashboard radio v1 n’est pas fusionné avec cette vue.
+La v2 fait monter les vecteurs $w^{(k)}$ jusqu’à Postgres. La v3 les **agrège** (FedAvg) et **renvoie** un modèle global aux nœuds, sur le même LoRa. Le dashboard radio v1 n’est pas fusionné avec cette vue.
 
 Agrégation mesurée sur **19 rounds** (export `results/campagne-2026-09-04-v3/`). Placement identique à la v2 : nœud 1 témoin, nœud 2 autre pièce.
 
@@ -8,21 +8,15 @@ Agrégation mesurée sur **19 rounds** (export `results/campagne-2026-09-04-v3/`
 
 Federated Averaging, McMahan, Moore, Ramage, Hampson et y Arcas (2017), *Communication-Efficient Learning of Deep Networks from Decentralized Data*, AISTATS, PMLR 54.
 
-Les données brutes \(D_k\) (DHT) restent sur le client \(k\). Seuls les paramètres circulent. Après un round \(t\) :
+Les données brutes $D_k$ (DHT) restent sur le client $k$. Seuls les paramètres circulent. Après un round $t$ :
 
-$$
-w_{t+1}
-\leftarrow
-\sum_{k=1}^{K} \frac{n_k}{n}\, w_{t+1}^{(k)}
-\quad\text{avec}\quad
-n = \sum_{k=1}^{K} n_k .
-$$
+$$ w_{t+1} \leftarrow \sum_{k=1}^{K} \frac{n_k}{n}\, w_{t+1}^{(k)} \quad\text{avec}\quad n = \sum_{k=1}^{K} n_k . $$
 
-Ici \(K = 2\), \(w \in \mathbb{R}^4\) (même modèle que la v2). \(n_k\) : `n_samples` / `n_trained` du firmware, borné par le tampon 32. Un nœud qui n’envoie pas à temps (perte LoRa, hors couverture) **n’entre pas** dans la somme. C’est le cas expérimental du client loin.
+Ici $K = 2$, $w \in \mathbb{R}^4$ (même modèle que la v2). $n_k$ : `n_samples` / `n_trained` du firmware, borné par le tampon 32. Un nœud qui n’envoie pas à temps (perte LoRa, hors couverture) **n’entre pas** dans la somme. C’est le cas expérimental du client loin.
 
 Implémentation : `backend/app/fedavg.py`, moyenne pondérée. Si `n_samples` vaut 0, on compte 1 pour ne pas écraser un vecteur reçu.
 
-Mode retenu : **synchrone**. Le serveur enfile `start_round`. Les nœuds qui reçoivent le signal s’entraînent dans la même fenêtre puis montent \(w^{(k)}\). L’asynchrone (chaque nœud selon tampon / radio, sans barrière) reste prévu après.
+Mode retenu : **synchrone**. Le serveur enfile `start_round`. Les nœuds qui reçoivent le signal s’entraînent dans la même fenêtre puis montent $w^{(k)}$. L’asynchrone (chaque nœud selon tampon / radio, sans barrière) reste prévu après.
 
 ## Cycle d’un round
 
@@ -33,8 +27,8 @@ Mode retenu : **synchrone**. Le serveur enfile `start_round`. Les nœuds qui re�
 5. Le nœud qui entend le signal fixe `roundId`, entraîne, envoie les poids **27 octets** (type `0x20`) avec ce `round_id`.
 6. Gateway JSON `type:weights` + `round_id` → agent → `POST /api/fl/update`. Les `round_id = 0` (poids périodiques v2) sont stockés mais **ignorés** pour l’agrégation.
 7. Dès que **deux** `node_id` distincts ont un update checksum OK pour ce round, ou au timeout 90 s : FedAvg, persisté sur `fl_rounds` (`w0`…`w3`, `n_total`, `n_nodes`). Commande `global_model`.
-8. Agent écrit `G <round> <i32> <i32> <i32> <i32>` (virgule fixe \(10^6\), pas de float : l’Uno n’a pas de `sscanf` float fiable). Gateway TX type `0x30` (25 octets). Même retransmission ~2,5 s, avec une durée de vie de 25 s pour ne pas déborder sur le round suivant.
-9. Le nœud applique \(w_{\text{global}}\) (`fl_apply_w`). Le SGD local continue ensuite **à partir** de ce vecteur.
+8. Agent écrit `G <round> <i32> <i32> <i32> <i32>` (virgule fixe $10^6$, pas de float : l’Uno n’a pas de `sscanf` float fiable). Gateway TX type `0x30` (25 octets). Même retransmission ~2,5 s, avec une durée de vie de 25 s pour ne pas déborder sur le round suivant.
+9. Le nœud applique $w_{\text{global}}$ (`fl_apply_w`). Le SGD local continue ensuite **à partir** de ce vecteur.
 
 Pendant le burst downlink, la gateway est en émission : quelques paquets capteur peuvent manquer. C’est du half-duplex, pas un fade LoRa des deux nœuds.
 
@@ -54,10 +48,10 @@ Compatible : la gateway accepte encore 25 octets (v2, `round_id` forcé à 0).
 | 3 | 1 | `node_id` |
 | 4 | 2 | `seq` uint16 |
 | 6 | 2 | `n_samples` |
-| 8 | 4 | \(w_0\) int32 = round(\(w \times 10^6\)) |
-| 12 | 4 | \(w_1\) |
-| 16 | 4 | \(w_2\) |
-| 20 | 4 | \(w_3\) |
+| 8 | 4 | $w_0$ int32 = round($w \times 10^6$) |
+| 12 | 4 | $w_1$ |
+| 16 | 4 | $w_2$ |
+| 20 | 4 | $w_3$ |
 | 24 | 2 | `round_id` uint16 (absent en v2) |
 | 26 | 1 | XOR des octets 0-25 (en v2 : XOR 0-23 à l’offset 24) |
 
@@ -75,7 +69,7 @@ Type `0x10`. `round_id` aux offsets 4-5. XOR à l’octet 7.
 | 3 | 1 | `0` (broadcast) |
 | 4 | 2 | `round_id` |
 | 6 | 2 | `0` |
-| 8-23 | 16 | \(w_0\)…\(w_3\) int32 |
+| 8-23 | 16 | $w_0$…$w_3$ int32 |
 | 24 | 1 | XOR 0-23 |
 
 ## API
@@ -90,13 +84,13 @@ Type `0x10`. `round_id` aux offsets 4-5. XOR à l’octet 7.
 | GET · POST | `/api/fl/auto` | non (labo) | Série automatique de rounds |
 | GET | `/health` | non | `fl_agg: true` |
 
-`/api/fl/errors` calcule à la demande, sans nouvelle table : le RMSE d’un round a besoin des températures **postérieures** à sa clôture, qui n’existent pas encore au moment où il se ferme. La requête couvre la fenêtre des rounds demandés, élargie de 5 min en amont — une cible juste après `closed_at` a besoin de ses \(T_{t-1}\) et \(T_{t-2}\).
+`/api/fl/errors` calcule à la demande, sans nouvelle table : le RMSE d’un round a besoin des températures **postérieures** à sa clôture, qui n’existent pas encore au moment où il se ferme. La requête couvre la fenêtre des rounds demandés, élargie de 5 min en amont — une cible juste après `closed_at` a besoin de ses $T_{t-1}$ et $T_{t-2}$.
 
 ### Série automatique
 
 Constituer un échantillon de plusieurs dizaines de rounds à la main n’est pas tenable. `/api/fl/auto` fait tourner une boucle côté serveur qui ouvre un round à intervalle fixe, navigateur fermé. Elle n’ouvre jamais un round si un autre est encore ouvert, et l’intervalle court depuis l’**ouverture** du précédent, pour que la cadence reste régulière même quand un round va au timeout. L’état vit en mémoire du processus (un seul worker uvicorn) : un redéploiement remet la série à l’arrêt, ce qui évite qu’un lanceur survive en silence.
 
-Le choix de l’intervalle n’est pas cosmétique, et un plancher de 60 s est imposé. Le tampon d’un nœud fait 32 échantillons à 15 s, soit **8 min pour se renouveler** : plus les rounds se rapprochent, plus ils réapprennent les mêmes données et produisent des \(w\) redondants. Surtout, chaque clôture déclenche un downlink pendant lequel la gateway émet et perd des paquets capteur — ceux-là mêmes qui servent ensuite à mesurer l’erreur. Enchaîner les rounds dégrade donc les données qui les évaluent. La fenêtre d’évaluation de 15 min ajoute un recouvrement entre rounds voisins. Un gros échantillon s’obtient par une **session longue**, pas par une cadence rapide.
+Le choix de l’intervalle n’est pas cosmétique, et un plancher de 60 s est imposé. Le tampon d’un nœud fait 32 échantillons à 15 s, soit **8 min pour se renouveler** : plus les rounds se rapprochent, plus ils réapprennent les mêmes données et produisent des $w$ redondants. Surtout, chaque clôture déclenche un downlink pendant lequel la gateway émet et perd des paquets capteur — ceux-là mêmes qui servent ensuite à mesurer l’erreur. Enchaîner les rounds dégrade donc les données qui les évaluent. La fenêtre d’évaluation de 15 min ajoute un recouvrement entre rounds voisins. Un gros échantillon s’obtient par une **session longue**, pas par une cadence rapide.
 
 Dernière mise à jour par nœud : `DISTINCT ON (node_id) … ORDER BY received_at DESC`. Après clôture, les participants affichés sont ceux reçus **avant** `closed_at`.
 
@@ -154,9 +148,9 @@ Les rounds **1 à 5** sont de la mise au point (écoute downlink, S3 encore proc
 
 Le S3 est au loin : RSSI **−105 à −109 dBm**, SNR **négatif** (−3,5 à −9 dB). Le WROOM reste sain : RSSI **−80 à −93 dBm**, SNR **~ +10 dB**.
 
-\(w_1\) local (dernier update **avant** `closed_at`) :
+$w_1$ local (dernier update **avant** `closed_at`) :
 
-| Round | \(w_1\) nœud 1 | \(w_1\) nœud 2 | \(w_1\) global | Écart n2−n1 |
+| Round | $w_1$ nœud 1 | $w_1$ nœud 2 | $w_1$ global | Écart n2−n1 |
 |-------|----------------|----------------|----------------|-------------|
 | 6 | 0,0537 | 0,0642 | 0,0584 | 0,0105 |
 | 7 | 0,0540 | 0,0614 | 0,0584 | 0,0074 |
@@ -165,11 +159,11 @@ Le S3 est au loin : RSSI **−105 à −109 dBm**, SNR **négatif** (−3,5 à �
 | 16 | 0,0552 | 0,0647 | 0,0599 | 0,0095 |
 | 19 | 0,0575 | 0,0660 | 0,0613 | 0,0085 |
 
-Le global **s’intercale** entre les deux locaux (écart \(w_1\) ~ 0,007 à 0,011). Ce n’est pas le vecteur du témoin seul. Les deux distributions locales restent visibles dans les \(w^{(k)}\) ; FedAvg les mélange, pondéré par \(n_k\) (ici souvent 32 + 32).
+Le global **s’intercale** entre les deux locaux (écart $w_1$ ~ 0,007 à 0,011). Ce n’est pas le vecteur du témoin seul. Les deux distributions locales restent visibles dans les $w^{(k)}$ ; FedAvg les mélange, pondéré par $n_k$ (ici souvent 32 + 32).
 
 ### Timeout : le nœud 2 n’entre pas dans la somme (rounds 10, 11, 14)
 
-| Round | \(n_{\mathrm{nodes}}\) | \(w_1\) global | RSSI nœud 2 pendant le round |
+| Round | $n_{\mathrm{nodes}}$ | $w_1$ global | RSSI nœud 2 pendant le round |
 |-------|------------------------|----------------|------------------------------|
 | 10 | 1 | 0,0532 (= nœud 1) | paquets nœud 2 **après** `closed_at` (−108 dBm) |
 | 11 | 1 | 0,0532 (= nœud 1) | aucun update nœud 2 |
@@ -181,7 +175,7 @@ Le round 5 illustre le même mécanisme en mise au point : un seul vecteur avant
 
 ### Erreur de prédiction
 
-Les vecteurs seuls ne disent pas si le modèle est **bon**. Chaque \(w\) a donc été rejoué hors ligne sur les températures réellement mesurées **après** la clôture du round (horizon 15 min), et comparé à la **persistance** (prédire \(T_t = T_{t-1}\)). Script : `results/campagne-2026-09-04-v3/erreur.py`, sur `readings.csv` exporté du serveur.
+Les vecteurs seuls ne disent pas si le modèle est **bon**. Chaque $w$ a donc été rejoué hors ligne sur les températures réellement mesurées **après** la clôture du round (horizon 15 min), et comparé à la **persistance** (prédire $T_t = T_{t-1}$). Script : `results/campagne-2026-09-04-v3/erreur.py`, sur `readings.csv` exporté du serveur.
 
 Un triplet n’est évalué que si ses trois lectures se suivent en `seq` : un paquet perdu casse le triplet et l’écarte. Sur 394 lectures valides, 319 triplets exploitables.
 
@@ -215,13 +209,13 @@ Pendant le burst downlink (`start_round` / modèle global), la gateway est en é
 
 ## Hors v3
 
-Historique fin du taux de réception, du RSSI et de la latence : **v4**, réalisée depuis (vue `#reseau`). Passage à 15-20 nœuds, variation du SF, FedAvg asynchrone : après. MQTT : hors périmètre tant que le PC relais USB existe.
+Historique fin du taux de réception, du RSSI et de la latence : **v4**, réalisée depuis ([rapport](../v4/V4_Rapport.md) — vue `#reseau`). Passage à 15-20 nœuds, variation du SF, FedAvg asynchrone : après. MQTT : hors périmètre tant que le PC relais USB existe.
 
 ## Ce que la v3 a montré
 
 Deux régimes sur le **même** banc, dans la même session.
 
-1. Lien dégradé mais encore décodable (−105 à −109 dBm, SNR négatif) : les deux \(w^{(k)}\) arrivent, et \(w_{\mathrm{global}}\) est une moyenne réelle entre deux distributions, chaque composante tombant entre les deux vecteurs locaux. Le client faible **pèse** sur le modèle.
+1. Lien dégradé mais encore décodable (−105 à −109 dBm, SNR négatif) : les deux $w^{(k)}$ arrivent, et $w_{\mathrm{global}}$ est une moyenne réelle entre deux distributions, chaque composante tombant entre les deux vecteurs locaux. Le client faible **pèse** sur le modèle.
 2. Nœud 2 hors fenêtre 90 s : FedAvg se réduit au témoin. Le global **reste défini** — il ignore le client absent sans l’interpoler — mais l’erreur mesurée montre qu’il n’est pas pour autant *utilisable* par ce client : il devient 1,7 fois moins précis pour lui. Le round 10 distingue « injoignable » de « trop lent » : les updates existent en base, après `closed_at`.
 
 Un round à deux participants se clôt avant le timeout (~42 à 77 s), donc la barrière synchrone n’est pas le facteur limitant tant que les deux clients répondent. Le coût du mode synchrone est ailleurs : pendant le downlink la gateway émet, et quelques paquets capteur tombent par half-duplex.

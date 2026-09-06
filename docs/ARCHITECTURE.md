@@ -39,7 +39,7 @@ La capture et l’entraînement ne sont pas simultanés. Ce n’est pas non plus
 
 La v1 n’implémente que (1) : capter, envoyer, stocker, afficher.
 La v2 ajoute le tampon, le SGD local et l’envoi des poids en LoRa.
-La v3 agrège (FedAvg) et renvoie \(w_{\text{global}}\) en downlink LoRa.
+La v3 agrège (FedAvg) et renvoie $w_{\text{global}}$ en downlink LoRa.
 
 ## Décision méthodologique : synchrone vs asynchrone
 
@@ -55,7 +55,9 @@ L’asynchrone est plus fidèle à la thèse finale (dans un FL vraiment
 décentralisé, les nœuds n’attendent pas un orchestrateur). Il viendra
 après, une fois la chaîne radio et le dashboard v1 stables.
 
-Cette décision est **documentée** pour la thèse. Le firmware écoute `start_round` et le modèle global ; le serveur clôt le round et calcule \(w_{\text{global}}\).
+Cette décision est **documentée** pour la thèse. Le firmware écoute `start_round` et le modèle global ; le serveur clôt le round et calcule $w_{\text{global}}$.
+
+**Nuance apportée par la mesure.** Le mode est synchrone dans son intention, pas dans son effet : la [v4](v4/V4_Rapport.md) montre que les poids n’arrivent jamais en réponse immédiate au `start_round`, mais toujours au créneau d’émission périodique du nœud, une fois par minute. Le serveur **ouvre** donc le round ; ce sont les horloges des nœuds qui déterminent sa clôture. Le banc est en pratique à mi-chemin entre les deux modes du tableau, et la fenêtre de timeout ne tolère de ce fait aucune perte de paquet.
 
 ## Versions (ne pas fusionner les dashboards)
 
@@ -64,8 +66,8 @@ Cette décision est **documentée** pour la thèse. Le firmware écoute `start_r
 | **v1** | Communications : temp, hum, RSSI, SNR, seq, âge | **Faite** |
 | **v2** | Poids locaux sur LoRa, canal témoin / dégradé | **Faite** |
 | **v3** | FedAvg : moyenne + modèle global, UI rounds, erreur de prédiction mesurée, contrôle par échange des rôles | **Faite** |
-| **v4** | Historique du taux de réception, du RSSI et de la latence (vue `#reseau`) | **Faite** |
-| **v5** | Variation du SF, asynchrone, passage à l’échelle | Plus tard |
+| **v4** | Historique du taux de réception, du RSSI et de la latence (vue `#reseau`) | **Faite** ([rapport](v4/V4_Rapport.md)) |
+| **v5** | Tolérance du timeout 90 / 120 / 150 s | **Faite** ([rapport](v5/V5_Rapport.md)) |
 
 Les métriques de liaison (RSSI, SNR, trous de séquence) remontent **dès la v1**
 pour ne pas refaire le schéma plus tard. La v4 les historise finement — et retient
@@ -87,9 +89,10 @@ global et des modèles locaux sur les lectures postérieures à la clôture du r
 persistance comme référence. Ce calcul est fait à la demande, pas au moment de la clôture :
 la vérité terrain n'existe pas encore quand le round se ferme.
 
-## Hors périmètre (volontairement, pour l’instant)
+## Hors périmètre de ce banc
 
 - Agrégation FedAvg asynchrone
-- Dashboard v4 (historique RSSI fin, latence)
+- Variation du spreading factor
+- Plus de deux nœuds
 - MQTT
 - Dashboard rounds fusionné avec les cartes radio v1

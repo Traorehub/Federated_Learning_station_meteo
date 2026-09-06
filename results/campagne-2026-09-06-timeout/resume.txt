@@ -1,0 +1,46 @@
+Session timeout (v5) — alternance 90 / 120 / 150 s
+6 sept. 13:36 -> 18:57 UTC, serie auto a 5 min.
+Placement identique a l'inversion et a la v4 : noeud 1 (WROOM) piece
+eloignee, noeud 2 (S3) a ~2 m, les deux a 14 dBm.
+Export depuis l'API publique (rounds, latences, erreurs, historique
+de reception). Les CSV complets Postgres n'ont pas ete copies : les
+fichiers fl_rounds.csv et latence.csv de ce dossier viennent de l'API.
+
+--- Decoupage ---
+Phase A (experience) : rounds 295-339, 45 rounds, 15 de chaque fenetre.
+  Radio stable. C'est le chiffre timeout.
+Phase B (accident)   : rounds 340-356, 17 rounds.
+  Reception du noeud 1 effondree (2-67 %). Le timeout n'y change rien.
+Queue vide           : rounds 357-359. Garde-fou : 3 vides -> arret.
+
+--- Phase A ---
+fenetre   complets     exclus n1   exclus n2
+ 90 s     13/15  87 %      0           2
+120 s     14/15  93 %      1           0
+150 s     15/15 100 %      0           0
+
+Latence nominale : n1 54,4 s, n2 47,9 s.
+Second creneau toujours +60 s (107-116 s).
+Troisieme creneau : 173,9 s (r329, exclu a 120 s ; 150 s non plus).
+
+Contre-factuel, memes latences, une seule fenetre sur les 45 rounds :
+  90 s  -> 84 % de rounds a deux noeuds
+ 120 s  -> 98 %
+ 150 s  -> 98 %   (identiques : tous les +60 s sont sous 120 s)
+ 180 s  -> 100 %  (rattrape l'unique double perte)
+
+--- Reception phase A (13:45-17:00 UTC) ---
+noeud  reception     RSSI         SNR       corrompus
+  1     90-98 %    -96 a -104    ~ 0 dB        0
+  2     90-100 %   ~ -59 dBm    +9,6 dB        0
+
+--- Phase B ---
+Noeud 1 manque 12/17, noeud 2 0/17. Complets 33/17/40 % selon
+la fenetre : plus un effet timeout, une radio qui lache.
+Deux seconds creneaux encore sauves. Arrivees a 171-292 s hors
+de toutes les fenetres.
+
+--- Conclusion ---
+La prediction v4 est mesuree. Donner deux occasions (timeout > ~115 s)
+ramene les rounds complets de 84 % a 98 % sur le meme trafic.
+Ce n'est pas une meilleure radio, c'est une regle d'attente.

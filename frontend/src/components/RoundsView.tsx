@@ -16,6 +16,26 @@ const INTERVALS = [
   { s: 480, label: '8 min' },
 ]
 
+/** Fenêtres d'attente proposées à la série.
+ *
+ *  Un nœud n'émet ses poids qu'une fois par minute, avec une latence de base
+ *  d'environ 45 s : à 90 s il n'a qu'une seule occasion, à 120 s et 150 s il en
+ *  a deux. Alterner les trois dans une même session mesure ce que coûte cette
+ *  occasion unique, sans que l'heure ou la température changent avec la fenêtre.
+ */
+const SCHEMES = [
+  { key: '90', timeouts: [90], label: '90 s (fixe)' },
+  { key: '120', timeouts: [120], label: '120 s (fixe)' },
+  { key: '90,120,150', timeouts: [90, 120, 150], label: '90 · 120 · 150 alternés' },
+]
+
+/** Session v5 : une seule variable (la fenêtre), cadence déjà éprouvée. */
+const V5 = { interval_s: 300, timeouts: [90, 120, 150] }
+
+function sameList(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i])
+}
+
 function fmtW(w: number[] | null | undefined): string {
   if (!w || w.length < 4) return '-'
   return w.map((x) => x.toFixed(4)).join('  ')
@@ -111,12 +131,21 @@ export function RoundsView() {
     }
   }
 
-  const onAuto = async (enabled: boolean, intervalS?: number) => {
+  const onAuto = async (enabled: boolean, intervalS?: number, timeouts?: number[]) => {
     try {
-      setAutoState(await setAuto(enabled, intervalS))
+      setAutoState(await setAuto(enabled, intervalS, timeouts))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'auto')
     }
+  }
+
+  const v5EnCours =
+    auto?.enabled === true &&
+    auto.interval_s === V5.interval_s &&
+    sameList(auto.timeouts, V5.timeouts)
+
+  const onLaunchV5 = () => {
+    void onAuto(true, V5.interval_s, V5.timeouts)
   }
 
   return (
@@ -159,10 +188,21 @@ export function RoundsView() {
           <div className="auto-bar">
             <button
               type="button"
-              className={`btn-auto ${auto.enabled ? 'on' : ''}`}
-              onClick={() => { void onAuto(!auto.enabled, auto.interval_s) }}
+              className={`btn-auto v5 ${v5EnCours ? 'on' : ''}`}
+              onClick={() => {
+                if (v5EnCours) void onAuto(false, auto.interval_s, auto.timeouts)
+                else onLaunchV5()
+              }}
             >
-              {auto.enabled ? 'Arrêter la série' : 'Lancer en série'}
+              {v5EnCours ? 'Arrêter 90 · 120 · 150' : 'Lancer 90 · 120 · 150 et partir'}
+            </button>
+
+            <button
+              type="button"
+              className={`btn-auto ${auto.enabled && !v5EnCours ? 'on' : ''}`}
+              onClick={() => { void onAuto(!auto.enabled, auto.interval_s, auto.timeouts) }}
+            >
+              {auto.enabled && !v5EnCours ? 'Arrêter la série' : 'Série simple'}
             </button>
 
             <label className="auto-interval">
@@ -177,13 +217,31 @@ export function RoundsView() {
               </select>
             </label>
 
+            <label className="auto-interval">
+              Fenêtre
+              <select
+                value={auto.timeouts.join(',')}
+                onChange={(e) => {
+                  const s = SCHEMES.find((x) => x.key === e.target.value)
+                  if (s) void onAuto(auto.enabled, auto.interval_s, s.timeouts)
+                }}
+              >
+                {SCHEMES.map((s) => (
+                  <option key={s.key} value={s.key}>{s.label}</option>
+                ))}
+              </select>
+            </label>
+
             <p className="sub auto-state">
               {auto.enabled
                 ? `${auto.rounds_started} round${auto.rounds_started > 1 ? 's' : ''} lancé${auto.rounds_started > 1 ? 's' : ''}` +
-                  (auto.next_in_s != null ? ` · prochain dans ${auto.next_in_s} s` : '')
-                : 'Série à l’arrêt. Le serveur enchaîne les rounds même navigateur fermé.'}
+                  (auto.next_in_s != null ? ` · prochain dans ${auto.next_in_s} s` : '') +
+                  (auto.next_timeout_s != null ? ` à ${auto.next_timeout_s} s d’attente` : '') +
+                  ` · s’arrête après ${auto.stop_after_empty} rounds vides`
+                : 'Série à l’arrêt. Un clic lance, tu peux fermer le navigateur : le serveur continue.'}
             </p>
 
+            {auto.stopped_reason && <p className="sub auto-err">{auto.stopped_reason}</p>}
             {auto.last_error && <p className="sub auto-err">Dernière erreur : {auto.last_error}</p>}
           </div>
         )}
@@ -225,6 +283,7 @@ export function RoundsView() {
                 <th>Round</th>
                 <th>État</th>
                 <th>Début</th>
+                <th>Fenêtre</th>
                 <th>Nœuds</th>
                 <th>n total</th>
                 <th>w global</th>
@@ -233,7 +292,7 @@ export function RoundsView() {
             <tbody>
               {rounds.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="empty">
+                  <td colSpan={7} className="empty">
                     Aucun round. Le bouton ci-dessus enfile un start_round vers l’agent.
                   </td>
                 </tr>
@@ -245,6 +304,7 @@ export function RoundsView() {
                   <td>{r.id}</td>
                   <td>{r.status === 'open' ? `ouvert (${remaining(r, now)})` : 'clos'}</td>
                   <td>{fmtTime(r.started_at)}</td>
+                  <td>{r.timeout_s ?? 90} s</td>
                   <td>
                     {parts.length
                       ? parts.map((p) => p.node_id).join(', ')
