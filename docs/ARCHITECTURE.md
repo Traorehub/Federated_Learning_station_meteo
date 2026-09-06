@@ -70,7 +70,7 @@ Cette décision est **documentée** pour la thèse. Le firmware écoute `start_r
 | **v5** | Tolérance du timeout 90 / 120 / 150 s | **Faite** ([rapport](v5/V5_Rapport.md)) |
 
 Les métriques de liaison (RSSI, SNR, trous de séquence) remontent **dès la v1**
-pour ne pas refaire le schéma plus tard. La v4 les historise finement — et retient
+pour ne pas refaire le schéma plus tard. La v4 les historise finement, et retient
 le **taux de réception** en priorité, le RSSI moyen s’étant révélé aveugle à la
 dégradation par biais du survivant (voir [session d’inversion](v3/V3_Session_inversion.md)).
 

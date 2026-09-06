@@ -1,5 +1,25 @@
 # Synthèse : agrégation FedAvg sur liaison LoRa réelle
 
+## Conclusions
+
+1. Les deux nœuds joignent le serveur. Un lien proche (RSSI d’environ −70 dBm, SNR voisin de +10 dB) et un lien distant (RSSI voisin de −100 dBm, SNR souvent négatif) coexistent. Le second demeure souvent décodable.
+
+2. Hors artefacts (interruption simultanée des deux nœuds, repli du compteur `seq` après un flash), les pertes radio valent environ 1 % près de la gateway et 12 % en pièce distante. Aucun paquet corrompu n’a été observé sur les sessions d’historisation.
+
+3. Le modèle global reste défini lorsqu’un seul client répond. Pour le nœud exclu, l’erreur de prédiction est alors 1,7 à 1,9 fois plus élevée. L’échange des pièces, à 14 dBm des deux côtés, reproduit ce facteur sur le nouveau nœud éloigné.
+
+4. Le modèle local prédit mieux les lectures du nœud que le modèle global dans 62 comparaisons sur 62. Le régresseur n’améliore la persistance que si le signal varie (+14 % en session diurne sur le nœud le plus bruité).
+
+5. Le RSSI moyen, calculé uniquement sur les paquets reçus, ne sépare pas participation et exclusion. Le taux de réception le fait : 96 % contre 50 % pour le nœud éloigné.
+
+6. L’écart de température d’environ 4 °C suit les capteurs et non les pièces (4,2 °C de calibration, 0,1 °C entre pièces). L’hétérogénéité des données locales vient des DHT11.
+
+7. Un nœud n’émet ses poids qu’une fois par minute. La latence de réponse (médiane 39 à 46 s, écart-type inférieur à 1 s) mesure un écart de phase, non la qualité radio. Le signal `start_round` n’obtient aucune réponse immédiate.
+
+8. Avec un timeout de 90 s, une perte de paquet unique suffit à exclure un client (environ 17 % de pertes, 37 % d’exclusions). Sur le même trafic, un timeout de 120 s porte la part de rounds à deux participants de 84 % à 98 %.
+
+9. Ces chiffres portent sur deux nœuds, un spreading factor unique et un intérieur. La pénalité d’exclusion est un plafond. Le modèle global n’a pas convergé en cinq heures.
+
 ## Problématique
 
 Le présent banc examine le comportement de Federated Averaging (McMahan et al., 2017) lorsque l’échange des paramètres s’effectue sur une liaison LoRa mesurée, et non sur un canal idéal. Les données brutes demeurent sur les nœuds. Seuls circulent quatre coefficients d’un régresseur linéaire. Deux clients sont en présence : l’un près de la gateway, l’autre en pièce distante. La question porte sur la moyenne globale lorsqu’un client est hors délai, lorsque le rapport signal sur bruit est faible ou négatif, et lorsque les distributions locales ne sont pas identiques.

@@ -12,8 +12,8 @@ La session n’est pas homogène. Il faut la couper, sinon on attribue à la fen
 
 | Phase | Rounds | Heure (UTC) | Lien |
 |---|---|---|---|
-| **A — stable** | 295 à 339 (45) | 13:36 → 17:17 | Réception nœud 1 ~90–98 %, nœud 2 ~90–100 % |
-| **B — dégradation du nœud 1** | 340 à 356 (17) | 17:22 → 18:42 | Réception nœud 1 2–67 %, puis reprise partielle |
+| **A, stable** | 295 à 339 (45) | 13:36 → 17:17 | Réception nœud 1 ~90–98 %, nœud 2 ~90–100 % |
+| **B, dégradation du nœud 1** | 340 à 356 (17) | 17:22 → 18:42 | Réception nœud 1 2–67 %, puis reprise partielle |
 | Queue vide | 357 à 359 | 18:47 → 18:57 | Plus personne ; la série s’arrête |
 
 La phase A est l’expérience timeout. La phase B est un accident de liaison, utile comme contre-épreuve : quand le paquet n’arrive plus du tout, allonger la fenêtre ne ressuscite pas le nœud.
@@ -30,7 +30,7 @@ Quinze rounds de chaque fenêtre, enchevêtrés.
 | 120 s | **14 / 15 (93 %)** | 1 | 0 |
 | 150 s | **15 / 15 (100 %)** | 0 | 0 |
 
-Les latences nominales restent celles de la v4 : nœud 1 **54,4 s**, nœud 2 **47,9 s**. Quand le premier créneau manque, le suivant arrive **+60 s** plus tard — 107 à 116 s. Jamais autre chose.
+Les latences nominales restent celles de la v4 : nœud 1 **54,4 s**, nœud 2 **47,9 s**. Quand le premier créneau manque, le suivant arrive **+60 s** plus tard, 107 à 116 s. Jamais autre chose.
 
 | Round | Nœud | Latence | Fenêtre | Sort |
 |---|---|---|---|---|
@@ -69,7 +69,7 @@ La cause de cette dégradation (déplacement, obstacle, alimentation ou brouilla
 
 ## Réception de la phase A
 
-Zéro paquet corrompu. Quand un paquet arrive, il arrive intact — comme en v4.
+Zéro paquet corrompu. Quand un paquet arrive, il arrive intact, comme en v4.
 
 | Nœud | Réception (13:45–17:00 UTC) | RSSI | SNR |
 |---|---|---|---|

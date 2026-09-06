@@ -20,6 +20,28 @@ Les versions v1 à v5 du banc sont réalisées : chaîne LoRa, agrégation FedAv
 
 Il n’existe pas d’instance publique maintenue en continu. Chaque personne déploie le serveur chez elle (Docker en local, VPS ou nom de domaine personnel) et peut l’arrêter à tout moment.
 
+## Résultats
+
+1. Les deux nœuds joignent le serveur. Un lien proche (RSSI d’environ −70 dBm, SNR voisin de +10 dB) et un lien distant (RSSI voisin de −100 dBm, SNR souvent négatif) coexistent. Le second demeure souvent décodable.
+
+2. Hors artefacts (interruption simultanée des deux nœuds, repli du compteur `seq` après un flash), les pertes radio valent environ 1 % près de la gateway et 12 % en pièce distante. Aucun paquet corrompu n’a été observé sur les sessions d’historisation.
+
+3. Le modèle global reste défini lorsqu’un seul client répond. Pour le nœud exclu, l’erreur de prédiction est alors 1,7 à 1,9 fois plus élevée. L’échange des pièces, à 14 dBm des deux côtés, reproduit ce facteur sur le nouveau nœud éloigné.
+
+4. Le modèle local prédit mieux les lectures du nœud que le modèle global dans 62 comparaisons sur 62. Le régresseur n’améliore la persistance que si le signal varie (+14 % en session diurne sur le nœud le plus bruité).
+
+5. Le RSSI moyen, calculé uniquement sur les paquets reçus, ne sépare pas participation et exclusion. Le taux de réception le fait : 96 % contre 50 % pour le nœud éloigné.
+
+6. L’écart de température d’environ 4 °C suit les capteurs et non les pièces (4,2 °C de calibration, 0,1 °C entre pièces). L’hétérogénéité des données locales vient des DHT11.
+
+7. Un nœud n’émet ses poids qu’une fois par minute. La latence de réponse (médiane 39 à 46 s, écart-type inférieur à 1 s) mesure un écart de phase, non la qualité radio. Le signal `start_round` n’obtient aucune réponse immédiate.
+
+8. Avec un timeout de 90 s, une perte de paquet unique suffit à exclure un client (environ 17 % de pertes, 37 % d’exclusions). Sur le même trafic, un timeout de 120 s porte la part de rounds à deux participants de 84 % à 98 %.
+
+9. Ces chiffres portent sur deux nœuds, un spreading factor unique et un intérieur. La pénalité d’exclusion est un plafond. Le modèle global n’a pas convergé en cinq heures.
+
+La suite du texte décrit le dispositif, les mesures et les limites. Synthèse : [docs/BILAN.md](docs/BILAN.md).
+
 ## Objectifs du projet
 
 Trois niveaux, dans cet ordre.
@@ -150,10 +172,6 @@ Le serveur ouvre chaque round. Les nœuds émettent leurs poids une fois par min
 
 La capture est continue (DHT toutes les 15 s, tampon de 32 échantillons). L’entraînement local (SGD) s’exécute sur ce tampon. L’agrégation a lieu à la clôture (`POST /api/fl/rounds`, timeout de 90 s par défaut ; la série automatique peut alterner 90 s, 120 s et 150 s).
 
-### Résultats principaux
-
-À deux clients, le modèle global demeure défini lorsqu’un nœud est absent ; l’erreur de prédiction pour ce nœud est alors 1,7 à 1,9 fois plus élevée. L’échange des pièces, à puissance égale, reproduit le facteur sur le nouveau nœud éloigné. Le RSSI moyen ne prédit pas l’exclusion ; le taux de réception le fait. Avec un timeout de 90 s, une perte de paquet unique suffit à exclure un client, car la fenêtre ne contient qu’un créneau d’émission. Sur le même trafic, un timeout de 120 s porte la part de rounds à deux participants de 84 % à 98 %. Le détail et les limites figurent dans [docs/BILAN.md](docs/BILAN.md).
-
 ## Apprentissage fédéré et FedAvg
 
 Le Federated Learning vise à entraîner un modèle **sans centraliser les données brutes**. Chaque client $k$ minimise une perte locale $F_k$ sur son jeu $D_k$ (ici : mesures DHT11 qui **restent sur l’ESP32**). Seuls les **paramètres** circulent.
@@ -174,7 +192,7 @@ Le vecteur $w = (w_0,w_1,w_2,w_3)$ part en LoRa (27 octets avec `round_id` ; la 
 
 ### Déroulement d’un round
 
-Le round est **ouvert par le serveur**, ce qui rend le timing reproductible — mais la mesure a montré que c’est la cadence d’émission des nœuds qui décide de sa clôture, non le signal de départ (voir [v4](docs/v4/V4_Rapport.md)) :
+Le round est **ouvert par le serveur**, ce qui rend le timing reproductible, mais la mesure a montré que c’est la cadence d’émission des nœuds qui décide de sa clôture, non le signal de départ (voir [v4](docs/v4/V4_Rapport.md)) :
 
 1. Ouverture d’un round côté API (`POST /api/fl/rounds`), qui met en file une commande `start_round`.
 2. L’agent PC lit cette commande et l’écrit sur le port série ; la gateway l’émet en LoRa (paquet 8 octets). La commande est **retransmise toutes les ~2,5 s** : à 400 ms, la gateway s’entendait elle-même et enregistrait des `bad_header`.
@@ -184,7 +202,7 @@ Le round est **ouvert par le serveur**, ce qui rend le timing reproductible — 
 
 Les poids envoyés hors round (`round_id = 0`, émission périodique de la v2) sont stockés mais **exclus** de l’agrégation.
 
-Pour constituer un échantillon, le serveur sait aussi enchaîner les rounds seul, à intervalle réglable depuis la vue `#rounds`. Le rythme mérite attention plutôt qu’un maximum : le tampon d’un nœud met **8 minutes** à se renouveler (32 échantillons à 15 s), si bien que des rounds trop rapprochés réapprennent les mêmes données. Et chaque clôture déclenche un downlink pendant lequel la gateway émet, donc perd des paquets capteur — précisément ceux qui servent ensuite à mesurer l’erreur des modèles. Un grand nombre de rounds s’obtient par une session longue, pas par une cadence rapide.
+Pour constituer un échantillon, le serveur sait aussi enchaîner les rounds seul, à intervalle réglable depuis la vue `#rounds`. Le rythme mérite attention plutôt qu’un maximum : le tampon d’un nœud met **8 minutes** à se renouveler (32 échantillons à 15 s), si bien que des rounds trop rapprochés réapprennent les mêmes données. Et chaque clôture déclenche un downlink pendant lequel la gateway émet, donc perd des paquets capteur, précisément ceux qui servent ensuite à mesurer l’erreur des modèles. Un grand nombre de rounds s’obtient par une session longue, pas par une cadence rapide.
 
 ## Première campagne (matériel réel)
 
@@ -250,7 +268,7 @@ Chaque composante du modèle global tombe **entre** les deux vecteurs locaux : c
 | 16 | 0,0552 | 0,0647 | 0,0599 | 0,0095 |
 | 19 | 0,0575 | 0,0660 | 0,0613 | 0,0085 |
 
-Le poids sur l’humidité ($w_2$) est celui qui sépare le plus les deux clients (~0,064 contre ~0,078) : le nœud 2 relève une température plus élevée et une humidité plus basse, et son modèle en tient compte davantage. C’est exactement l’hétérogénéité que FedAvg doit absorber. Son origine — les capteurs plutôt que les pièces — est établie plus loin, par [échange des rôles](#contrôle-par-échange-des-rôles).
+Le poids sur l’humidité ($w_2$) est celui qui sépare le plus les deux clients (~0,064 contre ~0,078) : le nœud 2 relève une température plus élevée et une humidité plus basse, et son modèle en tient compte davantage. C’est exactement l’hétérogénéité que FedAvg doit absorber. Son origine, les capteurs plutôt que les pièces, est établie plus loin, par [échange des rôles](#contrôle-par-échange-des-rôles).
 
 ### Cas 2 : le client distant est exclu du round
 
@@ -266,7 +284,7 @@ Le round 10 est le plus instructif : le client distant n’était pas hors servi
 
 ### Ce que vaut le modèle produit
 
-Comparer des vecteurs de poids ne dit pas si le modèle **prédit** bien. Chaque $w$ a donc été rejoué sur les températures réellement mesurées dans les quinze minutes **suivant** la clôture du round, puis comparé à la prédiction triviale dite de persistance — annoncer que la température ne changera pas. Un triplet de lectures n’est retenu que si ses `seq` se suivent : un paquet perdu l’écarte de l’évaluation.
+Comparer des vecteurs de poids ne dit pas si le modèle **prédit** bien. Chaque $w$ a donc été rejoué sur les températures réellement mesurées dans les quinze minutes **suivant** la clôture du round, puis comparé à la prédiction triviale dite de persistance, annoncer que la température ne changera pas. Un triplet de lectures n’est retenu que si ses `seq` se suivent : un paquet perdu l’écarte de l’évaluation.
 
 Erreur quadratique moyenne, en degrés Celsius :
 
@@ -275,11 +293,11 @@ Erreur quadratique moyenne, en degrés Celsius :
 | 1 (témoin) | 0,028 | 0,034 | 0,750 | 2,296 |
 | 2 (distant) | 0,380 | 0,353 | 0,865 | 1,467 |
 
-**Le client exclu repart avec un modèle qui lui va mal.** C’est le lien le plus direct entre la radio et l’apprentissage. Quand le nœud 2 rate le round, le modèle qu’on lui redescend est **1,7 fois** moins précis que lorsqu’il a été agrégé. La situation est symétrique : au round 2, seul le nœud 2 avait répondu, et le modèle qui en découle atteint 2,3 °C d’erreur pour le nœud 1. Un timeout LoRa ne retire donc pas seulement un client d’une moyenne — il lui renvoie un modèle calibré sur la pièce d’en face. Le chiffre du nœud 2 repose sur quatre rounds, celui du nœud 1 sur un seul : l’ordre de grandeur tient, la valeur exacte demande confirmation.
+**Le client exclu repart avec un modèle qui lui va mal.** C’est le lien le plus direct entre la radio et l’apprentissage. Quand le nœud 2 rate le round, le modèle qu’on lui redescend est **1,7 fois** moins précis que lorsqu’il a été agrégé. La situation est symétrique : au round 2, seul le nœud 2 avait répondu, et le modèle qui en découle atteint 2,3 °C d’erreur pour le nœud 1. Un timeout LoRa ne retire donc pas seulement un client d’une moyenne, il lui renvoie un modèle calibré sur la pièce d’en face. Le chiffre du nœud 2 repose sur quatre rounds, celui du nœud 1 sur un seul : l’ordre de grandeur tient, la valeur exacte demande confirmation.
 
-**Le modèle global est moins précis que chaque modèle local, dans 27 comparaisons sur 28.** Ce n’est pas un défaut d’agrégation mais l’effet attendu de l’hétérogénéité : les deux clients ne relèvent ni la même température ni la même humidité, et la moyenne produit un compromis systématiquement biaisé — d’environ 0,85 °C de surestimation pour le témoin. C’est le *client drift* du FL non i.i.d., ici mesuré sur du matériel plutôt que simulé.
+**Le modèle global est moins précis que chaque modèle local, dans 27 comparaisons sur 28.** Ce n’est pas un défaut d’agrégation mais l’effet attendu de l’hétérogénéité : les deux clients ne relèvent ni la même température ni la même humidité, et la moyenne produit un compromis systématiquement biaisé, d’environ 0,85 °C de surestimation pour le témoin. C’est le *client drift* du FL non i.i.d., ici mesuré sur du matériel plutôt que simulé.
 
-**Sur ces séries, la persistance bat le régresseur appris.** Un modèle à quatre poids n’apporte alors aucun gain de précision : la température varie moins que la résolution du capteur sur un pas de quinze secondes. Cette conclusion est cependant liée aux conditions de la session — un régime nocturne où le signal bougeait à peine — et la [session d’échange des rôles](#contrôle-par-échange-des-rôles) la renverse sur un signal plus dynamique.
+**Sur ces séries, la persistance bat le régresseur appris.** Un modèle à quatre poids n’apporte alors aucun gain de précision : la température varie moins que la résolution du capteur sur un pas de quinze secondes. Cette conclusion est cependant liée aux conditions de la session, un régime nocturne où le signal bougeait à peine, et la [session d’échange des rôles](#contrôle-par-échange-des-rôles) la renverse sur un signal plus dynamique.
 
 Ces trois grandeurs sont calculées en direct par le dashboard, dans le panneau **Erreur du modèle** de la vue `#rounds` : le tableau par nœud, et une courbe du RMSE round par round où un marqueur creux signale un nœud absent de la moyenne. Le même calcul est reproductible hors ligne sur les exports (`results/campagne-2026-09-04-v3/erreur.py`).
 
@@ -300,7 +318,7 @@ Une session à un seul placement laisse ouverte une explication concurrente : le
 | 1 (éloigné) | 0,039 | 0,036 | 0,539 | 1,042 | **×1,8 à 1,9** |
 | 2 (proche) | 0,410 | 0,352 | 0,539 | 0,990 | **×1,8** |
 
-**La dégradation suit le lien, pas le nœud.** Le facteur mesuré était de 1,7 quand le nœud 2 occupait la pièce éloignée ; rôles échangés, on retrouve 1,8 à 1,9 sur le nœud 1. Le phénomène a changé de matériel en même temps que de pièce : il est attaché à la qualité de la liaison, et l’explication concurrente tombe. Le résultat n’est pas un artefact de période — comparée à ses rounds voisins immédiats plutôt qu’à la moyenne de session, chaque absence donne encore un rapport de 1,8 à 2,3.
+**La dégradation suit le lien, pas le nœud.** Le facteur mesuré était de 1,7 quand le nœud 2 occupait la pièce éloignée ; rôles échangés, on retrouve 1,8 à 1,9 sur le nœud 1. Le phénomène a changé de matériel en même temps que de pièce : il est attaché à la qualité de la liaison, et l’explication concurrente tombe. Le résultat n’est pas un artefact de période, comparée à ses rounds voisins immédiats plutôt qu’à la moyenne de session, chaque absence donne encore un rapport de 1,8 à 2,3.
 
 Deux réserves sur l’amplitude. À **deux** clients, l’exclusion d’un nœud laisse l’autre seul à définir le modèle global : ce qui est mesuré est donc le pire cas, « recevoir le modèle de l’autre à la place du sien », et non une valeur générale de FedAvg. Et le RMSE rejoue un vecteur *gelé*, alors que le nœud, qui adopte réellement les poids reçus, se recale ensuite par SGD sur ses propres données. La pénalité est un plafond, pas un coût permanent.
 
@@ -315,7 +333,7 @@ Deux réserves sur l’amplitude. À **deux** clients, l’exclusion d’un nœu
 | 1 | −95,8 dBm | −97,5 dBm | 96 % | 50 % |
 | 2 | −52,2 dBm | −46,2 dBm | 93 % | 83 % |
 
-Le niveau de signal n’explique pas l’exclusion : 1,7 dB d’écart sur le nœud 1, et un écart de **signe contraire** sur le nœud 2. La raison est un biais du survivant — le RSSI n’existe que pour les paquets reçus, et quand le lien lâche il n’arrive pas un paquet faible, il n’arrive rien. Le niveau moyen ne décrit donc que les paquets qui ont réussi. C’est un enseignement qu’une simulation, où les pertes sont connues, ne produit pas ; il justifie d’historiser le **taux de réception** et non le seul RSSI.
+Le niveau de signal n’explique pas l’exclusion : 1,7 dB d’écart sur le nœud 1, et un écart de **signe contraire** sur le nœud 2. La raison est un biais du survivant, le RSSI n’existe que pour les paquets reçus, et quand le lien lâche il n’arrive pas un paquet faible, il n’arrive rien. Le niveau moyen ne décrit donc que les paquets qui ont réussi. C’est un enseignement qu’une simulation, où les pertes sont connues, ne produit pas ; il justifie d’historiser le **taux de réception** et non le seul RSSI.
 
 ### L’hétérogénéité vient des capteurs, pas des pièces
 
@@ -329,7 +347,7 @@ L’échange constitue une expérience de contrôle involontaire. Les pièces on
 
 L’heure n’explique que le décalage **commun** aux deux nœuds, qui ne modifie pas l’écart entre eux. Il n’y a donc pas deux microclimats mais deux capteurs mal accordés, ce qu’autorise largement leur tolérance de ±2 °C par exemplaire.
 
-Cela n’affaiblit pas le dispositif : les distributions locales restent différentes, FedAvg y est bien confronté et le *client drift* mesuré est réel. Seule la cause change — et l’on peut soutenir qu’elle est plus représentative, car dans un parc IoT déployé des capteurs bon marché dérivent chacun de leur côté.
+Cela n’affaiblit pas le dispositif : les distributions locales restent différentes, FedAvg y est bien confronté et le *client drift* mesuré est réel. Seule la cause change, et l’on peut soutenir qu’elle est plus représentative, car dans un parc IoT déployé des capteurs bon marché dérivent chacun de leur côté.
 
 ## Ce qui exclut réellement un client d’un round
 
@@ -340,15 +358,15 @@ Les deux sessions précédentes établissent qu’un client exclu reçoit un mod
 | 1 (éloigné) | 83 % | −94 dBm | **0** | 45,9 s | 0,66 s |
 | 2 (proche) | 87 % | −61 dBm | **0** | 38,6 s | 0,89 s |
 
-**Aucun paquet corrompu sur 3 h 40.** Quand un paquet arrive, il arrive intact : la dégradation est binaire, jamais partielle. C’est le pendant mécanique du biais du survivant — il n’existe pas de paquet à demi reçu dont le RSSI pourrait témoigner.
+**Aucun paquet corrompu sur 3 h 40.** Quand un paquet arrive, il arrive intact : la dégradation est binaire, jamais partielle. C’est le pendant mécanique du biais du survivant, il n’existe pas de paquet à demi reçu dont le RSSI pourrait témoigner.
 
 **La latence ne mesure pas la radio, elle mesure un écart de phase.** Moins d’une seconde de dispersion sur une trentaine de rounds : un nœud n’émet ses poids qu’une fois par minute, sur une horloge interne que rien ne resynchronise, et la latence est simplement l’attente jusqu’à son prochain créneau. Une interruption fortuite de 51 minutes l’a démontré en décalant la phase d’ouverture des rounds de dix secondes : la durée des rounds est passée de 55 à 45 secondes, exactement comme prédit, tandis que l’instant de clôture restait fixé au même moment de la minute. Le serveur ouvre le round, les nœuds décident quand il se ferme.
 
-**La fenêtre de timeout ne contient qu’une seule occasion d’émettre.** Avec une réponse normale à 45 s, un cycle d’émission de 60 s et un timeout de 90 s, il n’y a pas de seconde chance : la perte d’un unique paquet de poids reporte la réponse à 105 s et exclut le nœud. Les cinq dépassements observés valent 99, 105, 107, 109 et 114 secondes — toujours la latence normale plus un cycle, jamais autre chose.
+**La fenêtre de timeout ne contient qu’une seule occasion d’émettre.** Avec une réponse normale à 45 s, un cycle d’émission de 60 s et un timeout de 90 s, il n’y a pas de seconde chance : la perte d’un unique paquet de poids reporte la réponse à 105 s et exclut le nœud. Les cinq dépassements observés valent 99, 105, 107, 109 et 114 secondes, toujours la latence normale plus un cycle, jamais autre chose.
 
 Voilà les 17 % contre 37 % réconciliés. La radio n’est pas deux fois plus mauvaise que mesurée : le protocole convertit chaque perte unitaire en exclusion complète, sans amortissement. Le lien entre dégradation radio et dégradation du modèle passe donc par un intermédiaire qui n’avait pas été identifié.
 
-Deux résultats secondaires méritent mention. Le modèle agrégé **n’a pas convergé** en cinq heures — $w_0$ perd un quart de sa valeur sans plateau — ce qui invite à la prudence sur toute lecture d’un modèle global comme d’un état stable, et fournit une explication candidate à la dérive d’erreur relevée plus haut. Et le signal `start_round` **ne déclenche aucune réponse** : les poids arrivent toujours au créneau périodique, jamais dans les secondes suivant l’ouverture, alors que le firmware est censé répondre immédiatement. La cause n’est pas établie ; elle n’était pas nécessaire pour tester la fenêtre.
+Deux résultats secondaires méritent mention. Le modèle agrégé **n’a pas convergé** en cinq heures, $w_0$ perd un quart de sa valeur sans plateau, ce qui invite à la prudence sur toute lecture d’un modèle global comme d’un état stable, et fournit une explication candidate à la dérive d’erreur relevée plus haut. Et le signal `start_round` **ne déclenche aucune réponse** : les poids arrivent toujours au créneau périodique, jamais dans les secondes suivant l’ouverture, alors que le firmware est censé répondre immédiatement. La cause n’est pas établie ; elle n’était pas nécessaire pour tester la fenêtre.
 
 ### Comparaison des timeouts (v5)
 
