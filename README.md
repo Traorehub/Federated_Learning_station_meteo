@@ -140,9 +140,10 @@ Un banc limité au Serial Monitor reste difficile à relire et à partager. D’
 | Phase | Objectif | Statut |
 |-------|----------|--------|
 | **v1** | Prouver ESP32 → LoRa → Uno → PC → site | **Réalisée** (dashboard comms) |
-| **v2a** | Entraînement local + transport des poids sur LoRa | **Réalisée** (table `fl_updates`) |
-| **v2b** | FedAvg synchrone : moyenne serveur + modèle global renvoyé | **Réalisée** (`fl_rounds`, vue `#rounds`) |
-| **v3** | Pertes, latence, RSSI dans le temps (métriques de thèse) | Plus tard |
+| **v2** | Entraînement local + transport des poids sur LoRa | **Réalisée** (table `fl_updates`) |
+| **v3** | FedAvg synchrone : moyenne serveur, modèle global renvoyé, erreur de prédiction mesurée, contrôle par échange des rôles | **Réalisée** (`fl_rounds`, vue `#rounds`) |
+| **v4** | Taux de réception, RSSI et latence dans le temps | **Réalisée** (`/api/network/*`, vue `#reseau`) |
+| **v5** | Variation du spreading factor, asynchrone, plus de deux clients | Plus tard |
 
 FedAvg **synchrone** : le serveur envoie un signal de début de round, et les nœuds qui participent s’entraînent dans la même fenêtre. Ce mode est plus simple à déboguer. L’asynchrone (chaque nœud envoie selon sa radio) est plus réaliste en LoRa ; il est prévu après le FedAvg sync.
 
@@ -291,7 +292,7 @@ Ces trois grandeurs sont calculées en direct par le dashboard, dans le panneau 
 ### Ce que la session établit
 
 - Un lien à **SNR négatif** (−105 à −109 dBm) transporte encore des mises à jour de modèle : la contrainte radio ne supprime pas la participation, elle la rend intermittente. Sur les 18 rounds où au moins un client a répondu, les **deux** clients ont été agrégés **12 fois**.
-- Quand il participe, la moyenne pondérée déplace réellement le modèle global vers son climat ; quand il dépasse le délai, le round **aboutit quand même** avec un client de moins.
+- Quand il participe, la moyenne pondérée déplace réellement le modèle global vers sa distribution ; quand il dépasse le délai, le round **aboutit quand même** avec un client de moins.
 - Un round qui aboutit n’est pas pour autant un round sans conséquence : le client exclu reçoit un modèle **1,7 fois moins précis** pour lui. La dégradation radio se propage jusqu’à la qualité du modèle, et pas seulement jusqu’au taux de participation.
 - Le pilotage synchrone a un coût mesurable : la gateway est en émission pendant la diffusion du modèle global, et quelques paquets capteur manquent alors par half-duplex. C’est une perte imputable au **protocole**, pas au canal.
 - La limite du banc est assumée : le modèle global reste moins précis que les modèles locaux. Ce qui est démontré, c’est la mécanique fédérée sous contrainte radio.
@@ -307,7 +308,9 @@ Une session à un seul placement laisse ouverte une explication concurrente : le
 
 **La dégradation suit le lien, pas le nœud.** Le facteur mesuré était de 1,7 quand le nœud 2 occupait la pièce éloignée ; rôles échangés, on retrouve 1,8 à 1,9 sur le nœud 1. Le phénomène a changé de matériel en même temps que de pièce : il est attaché à la qualité de la liaison, et l’explication concurrente tombe. Le résultat n’est pas un artefact de période — comparée à ses rounds voisins immédiats plutôt qu’à la moyenne de session, chaque absence donne encore un rapport de 1,8 à 2,3.
 
-Deux réserves sur l’amplitude. À **deux** clients, l’exclusion d’un nœud laisse l’autre seul à définir le modèle global : ce qui est mesuré est donc le pire cas, « recevoir le modèle de l’autre pièce », et non une valeur générale de FedAvg. Et le RMSE rejoue un vecteur *gelé*, alors que le nœud, qui adopte réellement les poids reçus, se recale ensuite par SGD sur ses propres données. La pénalité est un plafond, pas un coût permanent.
+Deux réserves sur l’amplitude. À **deux** clients, l’exclusion d’un nœud laisse l’autre seul à définir le modèle global : ce qui est mesuré est donc le pire cas, « recevoir le modèle de l’autre à la place du sien », et non une valeur générale de FedAvg. Et le RMSE rejoue un vecteur *gelé*, alors que le nœud, qui adopte réellement les poids reçus, se recale ensuite par SGD sur ses propres données. La pénalité est un plafond, pas un coût permanent.
+
+**Le *client drift* se confirme.** Le modèle local d’un nœud prédit mieux ses propres températures que le modèle global dans 62 comparaisons sur 62, contre 27 sur 28 précédemment. Le décompte reste une description et non un test : des rounds espacés de 5 minutes évalués sur des fenêtres de 15 minutes se recouvrent, et ces observations ne sont pas indépendantes.
 
 **Le régresseur bat la persistance, à condition que le signal bouge.** Le gain est de 14 % sur le nœud 2 (0,352 contre 0,410). Sur le nœud 1, il ne vaut que trois millièmes de degré, sous le seuil de signification physique d’un DHT11. La conclusion nocturne précédente est donc corrigée, mais sans généralisation abusive.
 
@@ -424,9 +427,9 @@ Un clic sur le GIF ouvre la vidéo complète (MP4).
 | Composant | Rôle |
 |-----------|------|
 | `agent/serial_bridge.py` | Lit le port COM, POST `/api/ingest` et `/api/fl/update`, relaie `start_round` et le modèle global |
-| FastAPI + Uvicorn | Ingest capteur, ingest poids, rounds FedAvg (manuels ou en série), erreur de prédiction, overview, WebSocket `/ws/live` |
+| FastAPI + Uvicorn | Ingest capteur, ingest poids, rounds FedAvg (manuels ou en série), erreur de prédiction, historique de liaison, overview, WebSocket `/ws/live` |
 | PostgreSQL 16 | `readings`, `node_stats`, `fl_updates`, `fl_rounds` |
-| React (Vite) | Cartes nœuds (liaison) ; vue `#rounds` (participants, \(w\) global, RMSE par nœud) |
+| React (Vite) | Cartes nœuds (liaison) ; vue `#rounds` (participants, \(w\) global, RMSE par nœud) ; vue `#reseau` (taux de réception, RSSI et latence dans le temps) |
 | Docker / nginx | Reverse proxy. Brancher un domaine personnel ou un tunnel si besoin |
 
 ## Structure du dépôt

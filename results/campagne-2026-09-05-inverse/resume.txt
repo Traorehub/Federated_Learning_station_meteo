@@ -25,7 +25,7 @@ RMSE °C, horizon 15 min après closed_at, triplets à seq consécutifs.
 1412 lectures -> 1200 triplets (contre 319 le 4 septembre).
 
 noeud  persistance  w local  w global présent  w global absent  pénalité
-  1        0,039     0,036       0,539            1,042           x1,9
+  1        0,039     0,036       0,539            1,042        x1,8 à 1,9
   2        0,410     0,352       0,539            0,990           x1,8
 
 RESULTAT CLE : la pénalité se reproduit AVEC LES ROLES ECHANGES.
@@ -34,19 +34,45 @@ lui le nœud éloigné. L'effet suit le LIEN RADIO, pas le nœud. C'est le
 contrôle qui manquait : on ne peut plus objecter que le modèle d'un nœud
 serait intrinsèquement mauvais.
 
-Modèle local meilleur que le global : 62 comparaisons sur 62 (non-i.i.d.).
+RESERVES SUR L'AMPLITUDE (à ne pas omettre) :
+1. A DEUX CLIENTS la pénalité est maximale par construction : quand le
+   nœud 1 est absent, le « global » EST le vecteur du nœud 2, il n'y a plus
+   de moyenne. Avec 10 clients l'effet serait dilué. x1,8-1,9 est un
+   PLAFOND propre à ce banc, pas une valeur générale de FedAvg.
+2. Le RMSE rejoue un vecteur GELE sur 15 min. Le nœud adopte bien le
+   global (fl_apply_w écrase ses poids) mais reprend ensuite son SGD et se
+   recale. La pénalité est donc une borne supérieure, pas un coût permanent.
+3. La colonne « global présent » du nœud 1 inclut 3 rounds (41, 42, 54) où
+   c'était le nœud 2 qui manquait : le global valait alors le vecteur du
+   nœud 1 lui-même (erreur ~0,03), ce qui abaisse le dénominateur. En les
+   écartant : x1,8 au lieu de x1,9.
+4. Effet de période écarté par contrôle : l'erreur globale du nœud 1 dérive
+   sur la session (0,37 -> 0,79) et ses absences tombent plutôt tard. En
+   comparant chaque absence à ses ROUNDS VOISINS et non à la moyenne :
+   37-38 x1,9 / 49-51 x1,8 / 60 x2,0 / 65 x2,0 / 71 x2,3. Le résultat tient.
+   La dérive elle-même reste inexpliquée.
 
-CORRECTION du 4 septembre : le modèle appris bat maintenant la persistance
-sur les DEUX nœuds (0,036 vs 0,039 ; 0,352 vs 0,410). La conclusion inverse
-tirée le 4 septembre reposait sur 319 triplets d'une nuit calme ; ici 1200
-triplets sur une plage horaire plus variable. C'est cette session qui fait foi.
+Modèle local meilleur que le global : 62 comparaisons sur 62 (non-i.i.d.).
+Attention : ce n'est pas un test statistique. Rounds à 5 min et fenêtres à
+15 min se recouvrent, les 62 comparaisons ne sont pas indépendantes. C'est
+independance.py (horizons 10, 5, 3 min) qui porte l'argument, pas 62/62.
+
+CORRECTION du 4 septembre : le modèle appris bat maintenant la persistance,
+mais INEGALEMENT. Nœud 2 : 0,352 vs 0,410, +14 %, substantiel. Nœud 1 :
+0,036 vs 0,039, soit 3 MILLIEMES de degré, sous tout seuil physique pour un
+DHT11. Formulation correcte : le régresseur gagne sur le nœud dont le
+signal bouge, et reste indistinguable de la persistance sur l'autre.
+La conclusion inverse tirée le 4 septembre reposait sur 319 triplets d'une
+nuit calme ; ici 1200 triplets sur une plage plus variable. C'est cette
+session qui fait foi.
 
 --- Radio et participation (participation.py) ---
 noeud  RSSI si présent  RSSI si absent  réception si présent  si absent
   1        −95,8            −97,5              96 %             50 %
   2        −52,2            −46,2              93 %             83 %
 
-Le RSSI moyen n'explique PAS l'exclusion (1,7 dB d'écart sur le nœud 1).
+Le RSSI moyen n'explique PAS l'exclusion (1,7 dB d'écart sur le nœud 1, et
+écart de SIGNE CONTRAIRE sur le nœud 2).
 Le TAUX DE RECEPTION l'explique : 96 % quand il participe, 50 % quand il
 manque, soit un facteur 2.
 Raison : biais du survivant. Le RSSI n'est mesuré que sur les paquets
@@ -55,15 +81,39 @@ paquet. Le niveau moyen est donc un mauvais indicateur de la qualité du
 lien ; le débit de réception est le bon.
 Conséquence pour la v4 : historiser la réception, pas seulement le RSSI.
 
+Nuance : le résultat à retenir est le résultat NUL sur le RSSI. Le versant
+positif est en partie définitionnel — rater un round, c'est justement ne pas
+avoir livré son paquet de poids, donc « faible réception » et « absent » sont
+presque la même observation.
+De même, les 9,3 % de perte du nœud proche sont ATTRIBUES au half-duplex de
+la gateway, mais ce n'est pas démontré : il faudrait vérifier que ces pertes
+coïncident avec ses fenêtres d'émission. Faisable avec les séries de la v4.
+
 --- Températures : l'hétérogénéité vient des capteurs, pas des pièces ---
 4 sept.  : n1 = 25,4 °C (pièce proche), n2 = 29,5 °C (pièce éloignée).
 5 sept.  : n1 = 26,2 °C (pièce ELOIGNEE), n2 = 30,5 °C (pièce PROCHE).
 Pièces échangées, l'écart de ~4 °C n'a pas suivi. Il suit les capteurs.
-Le +0,9 °C commun s'explique par l'heure (session nocturne vs midi).
-=> écart de calibration entre les deux DHT11 (tolérance ±2 °C), pas deux
-microclimats. Le nœud 2 est aussi 10x plus bruité que le nœud 1, dans les
-deux pièces : caractéristique du capteur, là encore.
-A CORRIGER dans README.md et docs/v3/V3_Rapport.md, qui parlent de
-« deux microclimats » et de « la pièce distante plus chaude ».
+Si les pièces étaient en cause, l'échange aurait échangé les valeurs :
+n1 -> ~29,5 et n2 -> ~25,4. On observe l'inverse exact.
+
+DECOMPOSITION (4 mesures, 3 causes) :
+  ecart n1-n2 = -4,1 le 4 sept. et -4,3 le 5, PIECES INVERSEES.
+  Avec A = ecart capteurs, B = ecart pieces, d = effet de l'heure :
+  A + B = -4,1 ; A - B = -4,3 ; somme des 4 mesures -> 2d = +1,8
+  =>  capteurs 4,2 °C   |   heure +0,9 °C   |   pieces 0,1 °C
+L'heure n'explique que le decalage COMMUN aux deux nœuds, qui ne change pas
+l'ecart entre eux — et c'est l'ecart qui est en question. Elle ne peut donc
+pas sauver l'hypothese microclimat.
+Credibilite : les deux estimations (-4,1 et -4,3) tombent a 0,2 °C l'une de
+l'autre alors qu'elles viennent de placements OPPOSES.
+Reserve : on suppose que l'ecart entre pieces ne depend pas de l'heure.
+
+=> écart de calibration entre les deux DHT11 (tolérance ±2 °C par unité,
+donc 4 °C d'écart possible côte à côte), pas deux microclimats. Le nœud 2
+est aussi 10x plus bruité que le nœud 1, dans les deux pièces :
+caractéristique du capteur, là encore.
+CORRIGE dans README.md, docs/v3/V3_Rapport.md, docs/v2/V2_Rapport.md,
+docs/INTRODUCTION.md (voir la table de corrections en fin de
+docs/v3/V3_Session_inversion.md).
 L'hétérogénéité reste réelle et FedAvg y est bien confronté ; seule sa
 cause change, et un parc IoT réel dérive exactement comme ça.

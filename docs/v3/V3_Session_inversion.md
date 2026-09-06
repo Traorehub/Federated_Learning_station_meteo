@@ -44,7 +44,7 @@ RMSE moyen, en degrés Celsius :
 
 | Nœud | Persistance | Son modèle local | Global **s’il a participé** | Global **s’il était absent** | Pénalité |
 |---|---|---|---|---|---|
-| 1 (éloigné) | 0,039 | 0,036 | 0,539 | 1,042 | **×1,9** |
+| 1 (éloigné) | 0,039 | 0,036 | 0,539 | 1,042 | **×1,8 à 1,9** |
 | 2 (proche) | 0,410 | 0,352 | 0,539 | 0,990 | **×1,8** |
 
 La colonne « global s’il a participé » du nœud 1 inclut trois rounds (41, 42, 54) où c’était le nœud **2** qui manquait : le global valait alors le vecteur du nœud 1 lui-même, avec une erreur de 0,03. Ces valeurs tirent le dénominateur vers le bas. En les écartant, la pénalité du nœud 1 vaut **×1,8** au lieu de ×1,9. Le résultat ne dépend donc pas de ces trois rounds, mais le chiffre annoncé doit être lu comme ×1,8 à ×1,9.
@@ -53,7 +53,7 @@ La colonne « global s’il a participé » du nœud 1 inclut trois rounds (41, 
 
 C’est le résultat de la session. Le 4 septembre, quand le nœud **2** était l’éloigné, sa pénalité valait ×1,7. Ici, rôles échangés, on mesure ×1,9 pour le nœud 1 et ×1,8 pour le nœud 2. L’ordre de grandeur est le même dans les deux configurations et pour les deux matériels.
 
-L’explication concurrente tombe donc : ce n’est pas une propriété d’un nœud particulier, c’est une conséquence de l’exclusion. Un client qui rate un round repart avec un modèle calibré sur l’autre pièce, quel que soit le client.
+L’explication concurrente tombe donc : ce n’est pas une propriété d’un nœud particulier, c’est une conséquence de l’exclusion. Un client qui rate un round repart avec un modèle calibré sur les données de l’autre, quel que soit le client.
 
 Réserve de méthode : la pénalité du nœud 1 s’appuie sur 15 rounds, celle du nœud 2 sur 3 seulement, puisqu’il était bien reçu. C’est le nœud 1 qui porte la démonstration ici, et le nœud 2 qui la portait le 4 septembre — les deux sessions se complètent.
 
@@ -73,7 +73,7 @@ Le rapport reste entre 1,8 et 2,3 sur toute la session, y compris à la fin. La 
 
 #### Portée de la pénalité : deux limites à ne pas taire
 
-**À deux clients, la pénalité est maximale par construction.** Quand le nœud 1 est absent, le modèle « global » qu’il reçoit *est* le modèle du nœud 2 : il n’y a plus de moyenne, il n’y a plus qu’un contributeur. Ce qu’on mesure est donc le pire cas possible, « recevoir le modèle de l’autre pièce ». Avec dix clients, l’absence d’un seul déplacerait à peine la moyenne. Le ×1,8 à ×1,9 n’est pas un chiffre général sur FedAvg : c’est le **plafond** d’un banc à deux clients. Le mécanisme est démontré, son amplitude est propre à cette configuration.
+**À deux clients, la pénalité est maximale par construction.** Quand le nœud 1 est absent, le modèle « global » qu’il reçoit *est* le modèle du nœud 2 : il n’y a plus de moyenne, il n’y a plus qu’un contributeur. Ce qu’on mesure est donc le pire cas possible, « recevoir le modèle de l’autre à la place du sien ». Avec dix clients, l’absence d’un seul déplacerait à peine la moyenne. Le ×1,8 à ×1,9 n’est pas un chiffre général sur FedAvg : c’est le **plafond** d’un banc à deux clients. Le mécanisme est démontré, son amplitude est propre à cette configuration.
 
 **La pénalité est mesurée sur un modèle figé.** Le nœud adopte réellement le vecteur global — `fl_apply_w` écrase ses poids locaux, ce n’est pas un simple stockage — mais il reprend ensuite son SGD à partir de là et se recale sur ses propres données. Le RMSE, lui, rejoue le vecteur *gelé* sur les quinze minutes suivantes. Il mesure donc la dégradation à l’instant de la remise, non l’erreur réellement vécue par le nœud, qui est plus faible. La pénalité est une borne supérieure.
 
@@ -83,7 +83,7 @@ Sur **62 comparaisons sur 62**, le modèle local d’un nœud prédit mieux ses 
 
 Ce décompte est une description, pas un test statistique. Des rounds espacés de 5 minutes évalués sur des fenêtres de 15 minutes se recouvrent largement : ces 62 comparaisons ne constituent pas 62 observations indépendantes, et le rapport 62/62 ne doit pas être lu comme une significativité écrasante. `independance.py` montre que le sens du résultat tient à des horizons réduits (10, 5 et 3 min), ce qui est l’argument à retenir plutôt que le décompte lui-même.
 
-### Correction : le modèle appris bat la persistance
+### Correction : le régresseur bat la persistance, si le signal bouge
 
 Le rapport de la première session concluait que la persistance battait le régresseur, et donc que le modèle à quatre poids n’apportait rien en précision. **Cette conclusion est infirmée ici**, mais de façon inégale selon le nœud.
 

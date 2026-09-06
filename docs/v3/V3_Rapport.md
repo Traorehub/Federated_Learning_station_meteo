@@ -215,7 +215,7 @@ Pendant le burst downlink (`start_round` / modèle global), la gateway est en é
 
 ## Hors v3
 
-Historique RSSI fin, latence, 15-20 nœuds : **v4**. MQTT : hors périmètre tant que le PC relais USB existe. FedAvg asynchrone : après le sync.
+Historique fin du taux de réception, du RSSI et de la latence : **v4**, réalisée depuis (vue `#reseau`). Passage à 15-20 nœuds, variation du SF, FedAvg asynchrone : après. MQTT : hors périmètre tant que le PC relais USB existe.
 
 ## Ce que la v3 a montré
 
@@ -228,7 +228,7 @@ Un round à deux participants se clôt avant le timeout (~42 à 77 s), donc la b
 
 Le point qui répond à la question de départ : **la qualité radio se propage jusqu’au modèle**. Un timeout ne dégrade pas seulement une statistique de participation, il renvoie au client concerné un modèle calibré sur les données de l’autre. C’est ce que la v2 ne pouvait pas montrer, faute d’agrégation.
 
-En contrepartie, le banc montre aussi sa limite : le modèle global est moins bon que chaque modèle local, et sur ces séries nocturnes la persistance bat le régresseur. La démonstration porte sur le **mécanisme** fédéré sous contrainte radio, pas sur un gain de précision. La suite (historique RSSI, variation du SF, asynchrone, signal plus dynamique) est en [v4](../ARCHITECTURE.md).
+En contrepartie, le banc montre aussi sa limite : le modèle global est moins bon que chaque modèle local, et sur ces séries nocturnes la persistance bat le régresseur. La démonstration porte sur le **mécanisme** fédéré sous contrainte radio, pas sur un gain de précision. L’historique de liaison a été traité en [v4](../ARCHITECTURE.md) ; la variation du SF, l’asynchrone et le passage à plus de deux clients restent devant.
 
 ## Suite : contrôle par échange des rôles
 

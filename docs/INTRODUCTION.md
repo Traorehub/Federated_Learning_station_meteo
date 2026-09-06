@@ -22,7 +22,7 @@ Firmware, couleurs de fils, sketches et dashboard documentés pour qu’une autr
 **3. Relier le Federated Learning à un réseau imparfait mesuré.**  
 Le FL entraîne un modèle **sans centraliser les données brutes**. Chaque client garde ses DHT ; seuls des **poids** circulent. L’algorithme visé est FedAvg (McMahan et al., 2017) : moyenne pondérée des modèles locaux.
 
-La question de thèse n’est pas « peut-on afficher 24 °C sur un site ». C’est : **que devient cette moyenne quand le lien entre clients et agrégateur est du LoRa réel** (pertes, SNR faible, nœud absent, deux climats donc deux jeux non i.i.d.) ?
+La question de thèse n’est pas « peut-on afficher 24 °C sur un site ». C’est : **que devient cette moyenne quand le lien entre clients et agrégateur est du LoRa réel** (pertes, SNR faible, nœud absent, et deux jeux de données non i.i.d.) ?
 
 Sans la couche radio, on pourrait faire du FedAvg sur un PC. On ne pourrait pas dire *pourquoi* un nœud n’a pas participé à un round, ni relier une erreur de modèle à un RSSI de −100 dBm.
 
