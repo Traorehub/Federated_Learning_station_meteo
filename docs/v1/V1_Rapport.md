@@ -72,7 +72,9 @@ Shifter obligatoire sur NSS, RST, MOSI, SCK (Uno 5 V vers RA-02 3.3 V). MISO et 
 
 **ESP32-S3, nœud 2.** DHT déjà soudé sur la carte d’extension (pas un second module). Scan `firmware/test_dht_s3` : seule GPIO 2 répond (après une première lecture aberrante ~0,8 °C, puis des valeurs cohérentes). Cavalier DATA souvent requis à côté du capteur. `SPI.begin(18, 16, 6, 5)` **avant** `LoRa.begin` : le SPI par défaut ne correspond pas à ce câblage. Sketch : `firmware/node_esp32_s3`. Ne pas flasher le binaire WROOM sur le S3.
 
-**Brownout WROOM.** À 14 dBm : `Brownout detector was triggered`, reboot. Puissance d’émission du nœud 1 : **5 dBm**. Le S3 et l’Uno restent à 14 dBm. Conséquence : le WROOM reste le nœud **proche** ; le S3 part au loin (voir v2).
+**Brownout WROOM.** À 14 dBm : `Brownout detector was triggered`, reboot. Puissance d’émission du nœud 1 ramenée à **5 dBm**, le S3 et l’Uno restant à 14 dBm. Conséquence pour la v2 : le WROOM reste le nœud **proche**, le S3 part au loin.
+
+Ce constat était exact dans les conditions d’alimentation de l’époque, mais il n’est plus la configuration courante. Le WROOM a été repassé à 14 dBm en v3, pour l’[échange des rôles](../v3/V3_Session_inversion.md), et il a tenu une session complète sans une seule remise à zéro de sa séquence. La consigne à retenir n’est donc pas « le WROOM ne supporte pas 14 dBm » mais « surveiller le message de brownout, et redescendre vers 10 dBm s’il réapparaît ».
 
 Ne pas faire : 5 V sur VCC RA-02 ; MOSI/SCK/NSS/RST Uno sans shifter ; oubli d’antenne ; deux nœuds avec le même `NODE_ID`.
 
@@ -90,7 +92,7 @@ Little-endian. Bibliothèque LoRa (Sandeep Mistry). Intervalle : 15 s.
 | CR | 4/5 |
 | Sync | 0x12 (privé ; 0x34 = LoRaWAN public) |
 | Preamble | 8 |
-| TX | WROOM 5 dBm, S3/Uno 14 dBm |
+| TX | WROOM 5 dBm à l’époque de la v1 (14 dBm depuis la v3), S3/Uno 14 dBm |
 
 | Offset | Taille | Champ |
 |--------|--------|--------|

@@ -87,7 +87,9 @@ Gateway + PC **fixes**.
 
 Ne pas reculer le nœud 1 pour « égaliser » les RSSI : on perd le contrôle. La portée marketing « 1 km » suppose LOS, SF élevé, ~14 dBm. Ici : intérieur, SF7, murs. Distance utile : pièces, pas des kilomètres.
 
-Les deux climats diffèrent (pièces distinctes). Chaque nœud apprend **ses** DHT : données non i.i.d. C’est le régime pour lequel FedAvg est conçu.
+Les deux séries diffèrent d’environ 4 °C. Chaque nœud apprend **ses** DHT : données non i.i.d., le régime pour lequel FedAvg est conçu. On attribuait alors cet écart aux deux pièces ; l’échange des rôles en v3 a montré qu’il vient de la **calibration des capteurs** (voir [session d’inversion](../v3/V3_Session_inversion.md)). Le caractère non i.i.d. est intact, seule sa cause change.
+
+Le tableau ci-dessus décrit les conditions de la v2 : le nœud 1 est repassé à 14 dBm en v3, et les deux nœuds ont depuis échangé de pièce.
 
 ## Artefacts de mesure (à ne pas confondre avec la radio)
 
@@ -175,4 +177,4 @@ Le dashboard v1 n’affiche pas les rounds ni les \(w\). Les poids sont en base 
 
 ## Ce que la v2 a montré
 
-Un client sain et un client en bord de couverture coexistent. Un SNR négatif reste souvent décodable. Quatre poids passent en 25 octets (v2) puis 27 octets (v3, `round_id`) sur le même canal que les DHT. Les \(w\) divergent avec le microclimat. L’agrégation et le downlink sont décrits dans [v3](../v3/V3_Rapport.md).
+Un client sain et un client en bord de couverture coexistent. Un SNR négatif reste souvent décodable. Quatre poids passent en 25 octets (v2) puis 27 octets (v3, `round_id`) sur le même canal que les DHT. Les \(w\) divergent avec la distribution locale de chaque nœud. L’agrégation et le downlink sont décrits dans [v3](../v3/V3_Rapport.md).

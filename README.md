@@ -200,7 +200,7 @@ Deux pièces, même gateway Uno. Nœud 1 (WROOM-32D) près de la gateway (lien t
 | 1 | 995 | 197 | −62,3 dBm | 9,77 dB | 24,9 °C | 63,1 % |
 | 2 | 1082 | 195 | −83,9 dBm | 3,78 dB | 28,6 °C | 54,8 % |
 
-Un seul `bad_header` (`node_id` 0). En phase « pièce distante », le nœud 2 a été observé vers **−100 dBm** avec un SNR parfois **négatif**, tout en restant décodable (`ok = true`). Les deux vecteurs \(w\) locaux divergent : chaque nœud apprend **son** microclimat (données non i.i.d.). C’est le régime pour lequel FedAvg est conçu.
+Un seul `bad_header` (`node_id` 0). En phase « pièce distante », le nœud 2 a été observé vers **−100 dBm** avec un SNR parfois **négatif**, tout en restant décodable (`ok = true`). Les deux vecteurs \(w\) locaux divergent : chaque nœud apprend **sa** distribution locale (données non i.i.d.). C’est le régime pour lequel FedAvg est conçu.
 
 Le nœud proche n’est **pas** un défaut : c’est le client qui répond de façon fiable. Le nœud loin teste la fédération sous contrainte radio.
 
@@ -244,7 +244,7 @@ Exemple de round complet, vecteurs \(w = (w_0, w_1, w_2, w_3)\) :
 | Nœud 2 (distant) | 0,6330 | 0,0660 | 0,0778 | 0,1219 | −105 dBm, −3,5 dB |
 | **Modèle global** | **0,6348** | **0,0613** | **0,0701** | **0,1118** | diffusé aux deux |
 
-Chaque composante du modèle global tombe **entre** les deux vecteurs locaux : c’est bien une moyenne, pas une recopie du client le mieux reçu. L’écart entre les deux clients est systématique et non nul, parce qu’ils apprennent deux microclimats différents (données non i.i.d.) :
+Chaque composante du modèle global tombe **entre** les deux vecteurs locaux : c’est bien une moyenne, pas une recopie du client le mieux reçu. L’écart entre les deux clients est systématique et non nul, parce que leurs distributions locales diffèrent (données non i.i.d.) :
 
 | Round | \(w_1\) nœud 1 | \(w_1\) nœud 2 | \(w_1\) global | Écart entre clients |
 |-------|----------------|----------------|----------------|---------------------|
@@ -255,7 +255,7 @@ Chaque composante du modèle global tombe **entre** les deux vecteurs locaux : c
 | 16 | 0,0552 | 0,0647 | 0,0599 | 0,0095 |
 | 19 | 0,0575 | 0,0660 | 0,0613 | 0,0085 |
 
-Le poids sur l’humidité (\(w_2\)) est celui qui sépare le plus les deux clients (~0,064 contre ~0,078) : la pièce distante est plus chaude et moins humide, et son modèle en tient compte davantage. C’est exactement l’hétérogénéité que FedAvg doit absorber.
+Le poids sur l’humidité (\(w_2\)) est celui qui sépare le plus les deux clients (~0,064 contre ~0,078) : le nœud 2 relève une température plus élevée et une humidité plus basse, et son modèle en tient compte davantage. C’est exactement l’hétérogénéité que FedAvg doit absorber. Son origine — les capteurs plutôt que les pièces — est établie plus loin, par [échange des rôles](#contrôle-par-échange-des-rôles).
 
 ### Cas 2 : le client distant est exclu du round
 
@@ -282,9 +282,9 @@ Erreur quadratique moyenne, en degrés Celsius :
 
 **Le client exclu repart avec un modèle qui lui va mal.** C’est le lien le plus direct entre la radio et l’apprentissage. Quand le nœud 2 rate le round, le modèle qu’on lui redescend est **1,7 fois** moins précis que lorsqu’il a été agrégé. La situation est symétrique : au round 2, seul le nœud 2 avait répondu, et le modèle qui en découle atteint 2,3 °C d’erreur pour le nœud 1. Un timeout LoRa ne retire donc pas seulement un client d’une moyenne — il lui renvoie un modèle calibré sur la pièce d’en face. Le chiffre du nœud 2 repose sur quatre rounds, celui du nœud 1 sur un seul : l’ordre de grandeur tient, la valeur exacte demande confirmation.
 
-**Le modèle global est moins précis que chaque modèle local, dans 27 comparaisons sur 28.** Ce n’est pas un défaut d’agrégation mais l’effet attendu de l’hétérogénéité : les deux pièces ne partagent ni température ni humidité, et la moyenne produit un compromis systématiquement biaisé — d’environ 0,85 °C de surestimation pour le témoin. C’est le *client drift* du FL non i.i.d., ici mesuré sur du matériel plutôt que simulé.
+**Le modèle global est moins précis que chaque modèle local, dans 27 comparaisons sur 28.** Ce n’est pas un défaut d’agrégation mais l’effet attendu de l’hétérogénéité : les deux clients ne relèvent ni la même température ni la même humidité, et la moyenne produit un compromis systématiquement biaisé — d’environ 0,85 °C de surestimation pour le témoin. C’est le *client drift* du FL non i.i.d., ici mesuré sur du matériel plutôt que simulé.
 
-**La persistance bat le régresseur appris.** Sur ces séries, un modèle à quatre poids n’apporte aucun gain de précision : la température varie moins que la résolution du capteur sur un pas de quinze secondes. Le banc démontre le mécanisme fédéré sous contrainte radio, pas la supériorité de ce modèle. Établir un gain prédictif supposerait un signal plus dynamique ou un horizon plus long.
+**Sur ces séries, la persistance bat le régresseur appris.** Un modèle à quatre poids n’apporte alors aucun gain de précision : la température varie moins que la résolution du capteur sur un pas de quinze secondes. Cette conclusion est cependant liée aux conditions de la session — un régime nocturne où le signal bougeait à peine — et la [session d’échange des rôles](#contrôle-par-échange-des-rôles) la renverse sur un signal plus dynamique.
 
 Ces trois grandeurs sont calculées en direct par le dashboard, dans le panneau **Erreur du modèle** de la vue `#rounds` : le tableau par nœud, et une courbe du RMSE round par round où un marqueur creux signale un nœud absent de la moyenne. Le même calcul est reproductible hors ligne sur les exports (`results/campagne-2026-09-04-v3/erreur.py`).
 
@@ -294,11 +294,49 @@ Ces trois grandeurs sont calculées en direct par le dashboard, dans le panneau 
 - Quand il participe, la moyenne pondérée déplace réellement le modèle global vers son climat ; quand il dépasse le délai, le round **aboutit quand même** avec un client de moins.
 - Un round qui aboutit n’est pas pour autant un round sans conséquence : le client exclu reçoit un modèle **1,7 fois moins précis** pour lui. La dégradation radio se propage jusqu’à la qualité du modèle, et pas seulement jusqu’au taux de participation.
 - Le pilotage synchrone a un coût mesurable : la gateway est en émission pendant la diffusion du modèle global, et quelques paquets capteur manquent alors par half-duplex. C’est une perte imputable au **protocole**, pas au canal.
-- La limite du banc est assumée : le modèle global reste moins précis que les modèles locaux, et la persistance les bat tous les deux. Ce qui est démontré, c’est la mécanique fédérée sous contrainte radio.
+- La limite du banc est assumée : le modèle global reste moins précis que les modèles locaux. Ce qui est démontré, c’est la mécanique fédérée sous contrainte radio.
+
+## Contrôle par échange des rôles
+
+Une session à un seul placement laisse ouverte une explication concurrente : le modèle du nœud éloigné pouvait être mauvais **en soi**, indépendamment de la radio. Pour trancher, les deux nœuds ont échangé de pièce et leurs puissances d’émission ont été égalisées à 14 dBm, de sorte que **seule la position distingue les clients**. Session de 40 rounds enchaînés automatiquement, 1200 triplets exploitables contre 319 précédemment. Rapport détaillé : [docs/v3/V3_Session_inversion.md](docs/v3/V3_Session_inversion.md).
+
+| Nœud | Persistance | Son modèle local | Global **s’il a participé** | Global **s’il était absent** | Pénalité |
+|------|-------------|------------------|------------------------------|-------------------------------|----------|
+| 1 (éloigné) | 0,039 | 0,036 | 0,539 | 1,042 | **×1,8 à 1,9** |
+| 2 (proche) | 0,410 | 0,352 | 0,539 | 0,990 | **×1,8** |
+
+**La dégradation suit le lien, pas le nœud.** Le facteur mesuré était de 1,7 quand le nœud 2 occupait la pièce éloignée ; rôles échangés, on retrouve 1,8 à 1,9 sur le nœud 1. Le phénomène a changé de matériel en même temps que de pièce : il est attaché à la qualité de la liaison, et l’explication concurrente tombe. Le résultat n’est pas un artefact de période — comparée à ses rounds voisins immédiats plutôt qu’à la moyenne de session, chaque absence donne encore un rapport de 1,8 à 2,3.
+
+Deux réserves sur l’amplitude. À **deux** clients, l’exclusion d’un nœud laisse l’autre seul à définir le modèle global : ce qui est mesuré est donc le pire cas, « recevoir le modèle de l’autre pièce », et non une valeur générale de FedAvg. Et le RMSE rejoue un vecteur *gelé*, alors que le nœud, qui adopte réellement les poids reçus, se recale ensuite par SGD sur ses propres données. La pénalité est un plafond, pas un coût permanent.
+
+**Le régresseur bat la persistance, à condition que le signal bouge.** Le gain est de 14 % sur le nœud 2 (0,352 contre 0,410). Sur le nœud 1, il ne vaut que trois millièmes de degré, sous le seuil de signification physique d’un DHT11. La conclusion nocturne précédente est donc corrigée, mais sans généralisation abusive.
+
+### Le RSSI moyen ne mesure pas la fiabilité du lien
+
+| Nœud | RSSI s’il participe | RSSI s’il est absent | Réception s’il participe | Réception s’il est absent |
+|------|---------------------|----------------------|--------------------------|---------------------------|
+| 1 | −95,8 dBm | −97,5 dBm | 96 % | 50 % |
+| 2 | −52,2 dBm | −46,2 dBm | 93 % | 83 % |
+
+Le niveau de signal n’explique pas l’exclusion : 1,7 dB d’écart sur le nœud 1, et un écart de **signe contraire** sur le nœud 2. La raison est un biais du survivant — le RSSI n’existe que pour les paquets reçus, et quand le lien lâche il n’arrive pas un paquet faible, il n’arrive rien. Le niveau moyen ne décrit donc que les paquets qui ont réussi. C’est un enseignement qu’une simulation, où les pertes sont connues, ne produit pas ; il justifie d’historiser le **taux de réception** et non le seul RSSI.
+
+### L’hétérogénéité vient des capteurs, pas des pièces
+
+L’échange constitue une expérience de contrôle involontaire. Les pièces ont été inversées ; l’écart d’environ 4 °C entre les deux nœuds ne l’a pas été, et le nœud 2 est même devenu légèrement plus chaud en rejoignant la pièce censée être la plus fraîche. Quatre mesures suffisent à séparer les causes :
+
+| Cause | Contribution |
+|-------|--------------|
+| Écart de calibration entre les deux DHT11 | **4,2 °C** |
+| Heure de la journée | **+0,9 °C**, sur les deux nœuds à la fois |
+| Différence réelle entre les deux pièces | **0,1 °C** |
+
+L’heure n’explique que le décalage **commun** aux deux nœuds, qui ne modifie pas l’écart entre eux. Il n’y a donc pas deux microclimats mais deux capteurs mal accordés, ce qu’autorise largement leur tolérance de ±2 °C par exemplaire.
+
+Cela n’affaiblit pas le dispositif : les distributions locales restent différentes, FedAvg y est bien confronté et le *client drift* mesuré est réel. Seule la cause change — et l’on peut soutenir qu’elle est plus représentative, car dans un parc IoT déployé des capteurs bon marché dérivent chacun de leur côté.
 
 ### Ce qui n’est pas encore mesuré
 
-L’historique fin du RSSI et de la latence, la variation contrôlée du spreading factor, le mode asynchrone, et le passage à un nombre de clients supérieur à deux.
+La variation contrôlée du spreading factor, le mode asynchrone, et le passage à un nombre de clients supérieur à deux — ce dernier point étant nécessaire pour savoir ce que devient la pénalité quand la moyenne ne repose plus sur un seul survivant.
 
 ## Chaîne
 
@@ -435,6 +473,7 @@ Déploiement (local ou VPS personnel) : [docs/DEPLOY.md](docs/DEPLOY.md).
 | [docs/LORA.md](docs/LORA.md) | Format paquet, SF / BW / CR |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Sync vs async, v1 / v2 / v3 |
 | [docs/v3/V3_Rapport.md](docs/v3/V3_Rapport.md) | FedAvg, paquets, rounds |
+| [docs/v3/V3_Session_inversion.md](docs/v3/V3_Session_inversion.md) | Échange des rôles, pénalité, biais du survivant |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Docker, tunnel optionnel |
 
 ## Références

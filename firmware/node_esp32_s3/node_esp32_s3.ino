@@ -8,7 +8,10 @@
  * SPI.begin(18, 16, 6, 5) obligatoire avant LoRa.begin.
  *
  * Capture 15 s (paquet v1) + tampon + SGD + poids (27 octets) + RX global.
- * TX 14 dBm : mieux placé comme nœud éloigné (30-40 m) que le WROOM à 5 dBm.
+ * Écoute continue entre deux TX (la fenêtre de 400 ms de la v2 était trop
+ * courte pour les retransmissions de la gateway).
+ * TX 14 dBm, comme le WROOM depuis la v3 : les deux nœuds ont échangé de
+ * pièce et la puissance ne doit plus être une variable de l'expérience.
  *
  * Bibliothèques : LoRa (Sandeep Mistry), DHT sensor library (Adafruit).
  */
@@ -23,7 +26,6 @@
 #define NODE_ID            2
 #define SEND_INTERVAL_MS   15000UL
 #define WEIGHT_EVERY       4
-#define RX_WINDOW_MS       400UL
 
 #define DHTPIN             2
 #define DHTTYPE            DHT11

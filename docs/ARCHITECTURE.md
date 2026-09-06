@@ -63,11 +63,14 @@ Cette décision est **documentée** pour la thèse. Le firmware écoute `start_r
 |---|---|---|
 | **v1** | Communications : temp, hum, RSSI, SNR, seq, âge | **Faite** |
 | **v2** | Poids locaux sur LoRa, canal témoin / dégradé | **Faite** |
-| **v3** | FedAvg : moyenne + modèle global, UI rounds, erreur de prédiction mesurée | **Faite** (campagne 4 sept. 2026) |
-| **v4** | Historique RSSI, latence, passage à l’échelle | Plus tard |
+| **v3** | FedAvg : moyenne + modèle global, UI rounds, erreur de prédiction mesurée, contrôle par échange des rôles | **Faite** |
+| **v4** | Historique du taux de réception, du RSSI et de la latence (vue `#reseau`) | **Faite** |
+| **v5** | Variation du SF, asynchrone, passage à l’échelle | Plus tard |
 
 Les métriques de liaison (RSSI, SNR, trous de séquence) remontent **dès la v1**
-pour ne pas refaire le schéma plus tard. La v4 les historisera finement.
+pour ne pas refaire le schéma plus tard. La v4 les historise finement — et retient
+le **taux de réception** en priorité, le RSSI moyen s’étant révélé aveugle à la
+dégradation par biais du survivant (voir [session d’inversion](v3/V3_Session_inversion.md)).
 
 ## Ce que le serveur calcule déjà (v1)
 

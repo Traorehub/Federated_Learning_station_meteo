@@ -56,6 +56,34 @@ export type FlRound = {
   participants?: FlParticipant[]
 }
 
+/** Une tranche de temps de la liaison. `reception` est la grandeur qui prédit
+ *  la participation d'un nœud ; le RSSI, lui, ne la suit pas. */
+export type LinkBucket = {
+  t: string
+  recus: number
+  attendus: number
+  reception: number
+  corrompus: number
+  rssi_avg: number | null
+  rssi_min: number | null
+  snr_avg: number | null
+}
+
+export type LinkHistory = {
+  hours: number
+  bucket_min: number
+  sample_period_s: number
+  nodes: { node_id: number; buckets: LinkBucket[] }[]
+}
+
+export type RoundLatency = {
+  round_id: number
+  timeout_s: number
+  nodes: { node_id: number; latence_s: number; dans_les_temps: boolean }[]
+}
+
+export type LatencyHistory = { rounds: RoundLatency[] }
+
 export type FlAuto = {
   enabled: boolean
   interval_s: number

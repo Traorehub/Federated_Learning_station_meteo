@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react'
+import { NetworkView } from './components/NetworkView'
 import { NodeCard } from './components/NodeCard'
 import { PacketLog } from './components/PacketLog'
 import { RoundsView } from './components/RoundsView'
-import { ViewNav } from './components/ViewNav'
+import { ViewNav, type View } from './components/ViewNav'
 import { useLiveData } from './hooks/useLiveData'
 
 const PLACEHOLDERS = [{ node_id: 1 }, { node_id: 2 }] as const
 
-function viewFromHash(hash: string): 'radio' | 'rounds' {
-  return hash === '#rounds' ? 'rounds' : 'radio'
+function viewFromHash(hash: string): View {
+  if (hash === '#rounds') return 'rounds'
+  if (hash === '#reseau') return 'reseau'
+  return 'radio'
 }
 
 export default function App() {
-  const [view, setView] = useState<'radio' | 'rounds'>(() =>
-    viewFromHash(window.location.hash),
-  )
+  const [view, setView] = useState<View>(() => viewFromHash(window.location.hash))
 
   useEffect(() => {
     const onHash = () => setView(viewFromHash(window.location.hash))
@@ -22,9 +23,8 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  if (view === 'rounds') {
-    return <RoundsView />
-  }
+  if (view === 'rounds') return <RoundsView />
+  if (view === 'reseau') return <NetworkView />
 
   return <RadioView />
 }

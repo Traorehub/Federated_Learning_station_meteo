@@ -1,14 +1,8 @@
+import { nodeColor as color } from '../nodeColor'
 import type { FlErrors, FlNodeErrorSummary, FlRoundError } from '../types'
-
-/** Témoin en tungstène, nœud distant en braise : même code que les cartes radio. */
-const NODE_COLOR: Record<number, string> = { 1: '#e8b45a', 2: '#c45c3e' }
 
 const PAD = { top: 16, right: 14, bottom: 34, left: 48 }
 const BOX = { w: 720, h: 250 }
-
-function color(nodeId: number): string {
-  return NODE_COLOR[nodeId] ?? '#a89880'
-}
 
 function fmt(v: number | null | undefined, digits = 3): string {
   return v == null ? '-' : v.toFixed(digits)

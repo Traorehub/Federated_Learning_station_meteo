@@ -165,7 +165,7 @@ Le S3 est au loin : RSSI **−105 à −109 dBm**, SNR **négatif** (−3,5 à �
 | 16 | 0,0552 | 0,0647 | 0,0599 | 0,0095 |
 | 19 | 0,0575 | 0,0660 | 0,0613 | 0,0085 |
 
-Le global **s’intercale** entre les deux locaux (écart \(w_1\) ~ 0,007 à 0,011). Ce n’est pas le vecteur du témoin seul. Les deux climats (pièces distinctes) restent visibles dans les \(w^{(k)}\) ; FedAvg les mélange, pondéré par \(n_k\) (ici souvent 32 + 32).
+Le global **s’intercale** entre les deux locaux (écart \(w_1\) ~ 0,007 à 0,011). Ce n’est pas le vecteur du témoin seul. Les deux distributions locales restent visibles dans les \(w^{(k)}\) ; FedAvg les mélange, pondéré par \(n_k\) (ici souvent 32 + 32).
 
 ### Timeout : le nœud 2 n’entre pas dans la somme (rounds 10, 11, 14)
 
@@ -198,14 +198,18 @@ Trois lectures, dans l’ordre d’importance.
 
 Réserve de méthode : le chiffre du nœud 2 s’appuie sur quatre rounds (5, 10, 11, 14), celui du nœud 1 sur **un seul** (round 2). L’ordre de grandeur est cohérent, la valeur exacte du nœud 1 demande confirmation.
 
-**2. Le modèle global est moins bon que chaque modèle local, sur 27 comparaisons sur 28.** Ce n’est pas un défaut d’implémentation : c’est l’effet attendu de l’hétérogénéité. Les deux pièces n’ont ni la même température (~25,8 °C contre ~30 °C) ni la même humidité (~88 % contre ~72 %). La moyenne pondérée produit un compromis biaisé pour chacun : pour le nœud 1, le global surestime d’environ 0,85 °C de façon systématique. C'est le *client drift* documenté en FL non-i.i.d., ici mesuré sur du matériel réel plutôt que simulé.
+**2. Le modèle global est moins bon que chaque modèle local, sur 27 comparaisons sur 28.** Ce n’est pas un défaut d’implémentation : c’est l’effet attendu de l’hétérogénéité. Les deux clients ne relèvent ni la même température (~25,8 °C contre ~30 °C) ni la même humidité (~88 % contre ~72 %). La moyenne pondérée produit un compromis biaisé pour chacun : pour le nœud 1, le global surestime d’environ 0,85 °C de façon systématique. C'est le *client drift* documenté en FL non-i.i.d., ici mesuré sur du matériel réel plutôt que simulé.
 
-**3. La persistance bat le modèle appris.** Prédire « la même température qu’il y a 15 s » donne 0,028 °C d’erreur sur le nœud 1, là où son propre régresseur donne 0,034. Il faut le dire : sur ces séries, un modèle à quatre poids **n’apporte rien** en précision brute. La température varie moins que la résolution du DHT11 sur un pas de 15 s. Le banc démontre le **mécanisme** fédéré, pas la supériorité de ce modèle-ci. Un signal plus dynamique, ou un horizon plus long, seraient nécessaires pour que l’apprentissage ait un intérêt prédictif.
+Cet écart entre clients était attribué ici à deux microclimats. L’expérience d’échange de pièces l’a démenti : il provient de la **calibration des capteurs** (voir [Session d’inversion](V3_Session_inversion.md)). L’hétérogénéité et le *client drift* restent réels, seule leur cause change.
+
+**3. Sur ces séries, la persistance bat le modèle appris.** Prédire « la même température qu’il y a 15 s » donne 0,028 °C d’erreur sur le nœud 1, là où son propre régresseur donne 0,034. La température varie alors moins que la résolution du DHT11 sur un pas de 15 s, et un modèle à quatre poids n’apporte rien en précision brute.
+
+Cette lecture est propre aux conditions de la session : 319 triplets relevés de nuit, sur un signal quasi immobile. Sur 1200 triplets de milieu de journée, la [session d’inversion](V3_Session_inversion.md) mesure l’inverse — le régresseur y gagne 14 % sur le nœud bruité. La conclusion à retenir est donc conditionnelle : **le régresseur n’apporte quelque chose que si le signal bouge**, et sur ces séries-ci il ne bougeait pas assez.
 
 ### Ce qui n’est pas mesuré ici
 
 - **Taux de perte radio** : `node_stats.packets_missing` ~ 130 000 est un **wrap de `seq`** après reflashes, pas le canal. Les pertes LoRa (hors trou PC) restent celles des campagnes v2 : ~1 % près, ~12 % loin (`results/campagne-2026-08-31/`).
-- **Latence et RSSI dans le temps** : prévu en v4. Ici, RSSI/SNR sont ceux du paquet poids du round.
+- **Latence et RSSI dans le temps** : réalisé depuis en v4, vue `#reseau`. Ici, RSSI/SNR sont ceux du paquet poids du round.
 
 Pendant le burst downlink (`start_round` / modèle global), la gateway est en émission : quelques paquets capteur peuvent manquer (half-duplex), ce n’est pas un fade des deux nœuds.
 
@@ -217,14 +221,26 @@ Historique RSSI fin, latence, 15-20 nœuds : **v4**. MQTT : hors périmètre tan
 
 Deux régimes sur le **même** banc, dans la même session.
 
-1. Lien dégradé mais encore décodable (−105 à −109 dBm, SNR négatif) : les deux \(w^{(k)}\) arrivent, et \(w_{\mathrm{global}}\) est une moyenne réelle entre deux climats, chaque composante tombant entre les deux vecteurs locaux. Le client faible **pèse** sur le modèle.
+1. Lien dégradé mais encore décodable (−105 à −109 dBm, SNR négatif) : les deux \(w^{(k)}\) arrivent, et \(w_{\mathrm{global}}\) est une moyenne réelle entre deux distributions, chaque composante tombant entre les deux vecteurs locaux. Le client faible **pèse** sur le modèle.
 2. Nœud 2 hors fenêtre 90 s : FedAvg se réduit au témoin. Le global **reste défini** — il ignore le client absent sans l’interpoler — mais l’erreur mesurée montre qu’il n’est pas pour autant *utilisable* par ce client : il devient 1,7 fois moins précis pour lui. Le round 10 distingue « injoignable » de « trop lent » : les updates existent en base, après `closed_at`.
 
 Un round à deux participants se clôt avant le timeout (~42 à 77 s), donc la barrière synchrone n’est pas le facteur limitant tant que les deux clients répondent. Le coût du mode synchrone est ailleurs : pendant le downlink la gateway émet, et quelques paquets capteur tombent par half-duplex.
 
-Le point qui répond à la question de départ : **la qualité radio se propage jusqu’au modèle**. Un timeout ne dégrade pas seulement une statistique de participation, il renvoie au client concerné un modèle calibré sur la pièce d’en face. C’est ce que la v2 ne pouvait pas montrer, faute d’agrégation.
+Le point qui répond à la question de départ : **la qualité radio se propage jusqu’au modèle**. Un timeout ne dégrade pas seulement une statistique de participation, il renvoie au client concerné un modèle calibré sur les données de l’autre. C’est ce que la v2 ne pouvait pas montrer, faute d’agrégation.
 
-En contrepartie, le banc montre aussi sa limite : la persistance bat le régresseur, et le modèle global est moins bon que chaque modèle local. La démonstration porte sur le **mécanisme** fédéré sous contrainte radio, pas sur un gain de précision. La suite (historique RSSI, variation du SF, asynchrone, signal plus dynamique) est en [v4](../ARCHITECTURE.md).
+En contrepartie, le banc montre aussi sa limite : le modèle global est moins bon que chaque modèle local, et sur ces séries nocturnes la persistance bat le régresseur. La démonstration porte sur le **mécanisme** fédéré sous contrainte radio, pas sur un gain de précision. La suite (historique RSSI, variation du SF, asynchrone, signal plus dynamique) est en [v4](../ARCHITECTURE.md).
+
+## Suite : contrôle par échange des rôles
+
+Cette session laissait ouverte une objection : le modèle du nœud éloigné pouvait être mauvais en soi, indépendamment de la radio. La [session d’inversion](V3_Session_inversion.md) y répond en échangeant les deux nœuds de pièce, avec des puissances d’émission égalisées, sur 40 rounds et 1200 triplets. Elle confirme la pénalité (×1,8 à 1,9, sur le nouveau nœud éloigné) et révise trois points de ce rapport :
+
+| Point de ce rapport | Ce que l’échange établit |
+|---|---|
+| Deux microclimats distincts | Écart d’origine **capteur** : 4,2 °C de calibration contre 0,1 °C entre les pièces |
+| La persistance bat le régresseur | Vrai ici seulement ; faux dès que le signal varie |
+| Pénalité ×1,7 attribuable au lien | Confirmé — le phénomène suit la pièce, non le matériel |
+
+Les conditions décrites ci-dessus (placement, 5 dBm sur le nœud 1) sont conservées telles quelles : c’est un relevé daté, pas une description de la configuration courante.
 
 ## Référence
 

@@ -35,11 +35,15 @@ Questions, du plus immédiat au plus loin :
 | La chaîne physique tient-elle (deux nœuds, une gateway, un site) ? | v1 | Oui. Dashboard T, H, RSSI, SNR, `seq`, `ok`. |
 | Les poids d’un modèle minuscule passent-ils en LoRa (paquet court) ? | v2 | Oui. 25 octets, table `fl_updates`. |
 | Un nœud « bon lien » et un nœud « bord de couverture » coexistent-ils ? | v2 | Oui. Témoin ~ −70 dBm / SNR +10 dB ; loin ~ −100 dBm / SNR souvent négatif, encore décodable. |
-| Les modèles locaux divergent-ils (non i.i.d.) ? | v2 | Oui. Autre pièce, autre climat, \(w\) différents (ex. \(w_1\) ~ 0,31 vs ~ 0,02). |
+| Les modèles locaux divergent-ils (non i.i.d.) ? | v2 | Oui, \(w\) différents (ex. \(w_1\) ~ 0,31 vs ~ 0,02). L’origine de l’écart est la **calibration des capteurs**, non les pièces (v3, échange des rôles). |
 | Quelle part des « pertes » est radio, quelle part est le PC / l’agent ? | v2 | Un trou **simultané** des deux nœuds n’est pas LoRa. Un ~99 % dashboard après flash est un wrap de `seq`, pas le canal. Hors trou PC : ~1 % près, ~12 % loin. |
-| FedAvg sous ces pertes : le modèle global reste-t-il utilisable si le nœud 2 timeout ? | v3 | **Défini oui, utilisable non.** 12 rounds à 2 nœuds (\(w_{\text{global}}\) entre les deux \(w\)) ; au timeout (10, 11, 14) le global se réduit au témoin, et devient **1,7× moins précis** pour le nœud absent. |
-| Le modèle agrégé prédit-il mieux que les modèles locaux ? | v3 | Non, et c’est attendu : local meilleur dans 27 cas sur 28 (non i.i.d.). La persistance bat même le régresseur : le banc prouve le mécanisme, pas un gain de précision. |
-| RSSI/latence dans le temps, variation du SF, async, plus de nœuds | v4 | Plus tard. |
+| FedAvg sous ces pertes : le modèle global reste-t-il utilisable si un nœud timeout ? | v3 | **Défini oui, utilisable non.** Le global se réduit au seul client reçu à temps et devient **1,7 à 1,9× moins précis** pour le nœud absent. |
+| Cette dégradation vient-elle du lien ou du nœud ? | v3 | **Du lien.** Après échange des deux nœuds de pièce, à puissances égalisées, le phénomène a suivi la pièce (×1,8 à 1,9 sur le nouveau nœud éloigné). |
+| Le modèle agrégé prédit-il mieux que les modèles locaux ? | v3 | Non, et c’est attendu : local meilleur dans 62 cas sur 62 (non i.i.d., *client drift*). |
+| Le régresseur appris bat-il la prédiction triviale ? | v3 | **Seulement si le signal bouge.** +14 % sur le nœud bruité de jour ; indistinguable de la persistance sur un signal quasi immobile. |
+| Le RSSI moyen renseigne-t-il sur la fiabilité du lien ? | v3 | **Non**, biais du survivant : il n’est mesuré que sur les paquets reçus. C’est le **taux de réception** qui sépare participation et exclusion (96 % contre 50 %). |
+| RSSI/latence dans le temps | v4 | Fait. Vue `#reseau`. |
+| Variation du SF, async, plus de deux nœuds | v4+ | Plus tard. |
 
 Ce qu’on **ne** cherche pas ici : un thermomètre cloud, un réseau LoRaWAN opérateur, un réseau de neurones profond sur ESP32, une démo SaaS 24/7.
 
@@ -60,10 +64,9 @@ Le Wi-Fi irait au cloud sans passer par la radio LoRa. RSSI/SNR/`seq` disparaît
 
 ### Deux nœuds volontaires différents
 
-Nœud 1 (WROOM-32D) : 5 dBm (brownout à 14 dBm), près de la gateway : **témoin**.  
-Nœud 2 (ESP32-S3) : 14 dBm, autre pièce : **lien dégradé** et autre microclimat.
+Un nœud reste près de la gateway (**témoin**), l’autre occupe une pièce distante (**lien dégradé**). On ne rapproche pas le nœud éloigné pour égaliser les RSSI : le proche est le contrôle, le loin est la contrainte.
 
-On ne recule pas le nœud 1 pour égaliser les RSSI. Le proche est le contrôle ; le loin est la contrainte.
+Les deux rôles ont depuis été **échangés** : le WROOM-32D est parti dans la pièce distante et l’ESP32-S3 est revenu près de la gateway, les deux à 14 dBm pour que seule la position les distingue. C’est ce contrôle qui établit que la dégradation du modèle suit le lien et non le matériel, et que l’écart de température entre clients vient des capteurs. Le WROOM tourne donc aujourd’hui à 14 dBm ; il avait été limité à 5 dBm après un brownout en v1, qui ne s’est pas reproduit.
 
 ### Apprentissage (cible)
 
@@ -77,8 +80,9 @@ Les dashboards ne se fusionnent pas : v1 = radio, v3 = rounds et modèle, v4 = m
 |---------|------|--------|
 | v1 | Chaîne comms | Faite. [Rapport](v1/V1_Rapport.md) |
 | v2 | SGD local + poids LoRa + campagnes témoin/dégradé | Faite. [Rapport](v2/V2_Rapport.md) |
-| v3 | Moyenne FedAvg + renvoi de \(w_{\text{global}}\) | Faite. Campagne 4 sept. 2026. [Rapport](v3/V3_Rapport.md) |
-| v4 | Historique RSSI, latence, plus de nœuds | Plus tard |
+| v3 | Moyenne FedAvg + renvoi de \(w_{\text{global}}\) | Faite. [Rapport](v3/V3_Rapport.md), puis [échange des rôles](v3/V3_Session_inversion.md) |
+| v4 | Historique du taux de réception, du RSSI et de la latence | Faite. Vue `#reseau` |
+| v5 | Variation du SF, asynchrone, plus de deux nœuds | Plus tard |
 
 Chaque version s’appuie sur la précédente. Flasher aujourd’hui installe la v3 (poids 27 octets + RX du modèle global). Relancer l’agent et reconstruire Docker.
 

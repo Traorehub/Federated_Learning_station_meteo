@@ -348,6 +348,15 @@ tr.bad td { color: var(--off); }
 
 .err-panel { margin-top: 20px; }
 
+.log + .log { margin-top: 20px; }
+
+.net-chart-wrap { padding: 4px 20px 20px; }
+
+.net-chart {
+  width: 100%;
+  height: auto;
+}
+
 .err-chart-wrap {
   padding: 18px 20px 20px;
   border-top: 1px solid var(--line);

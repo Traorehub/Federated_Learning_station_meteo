@@ -1,0 +1,69 @@
+Session FedAvg — positions inversées, puissances égalisées
+Rounds 32 à 71 (40 rounds), 12:39 → 15:54 UTC, série automatique à 5 min.
+Export PostgreSQL VPS. Tables non vidées.
+
+--- Conditions (différentes de la session du 4 septembre) ---
+Nœud 1 (WROOM-32D) : AUTRE PIÈCE, TX porté de 5 à 14 dBm. RSSI ~ −95 dBm.
+Nœud 2 (ESP32-S3)  : ~2 m de la gateway. RSSI ~ −46 à −60 dBm.
+Le 4 septembre, les rôles étaient inverses. NE PAS FUSIONNER LES DEUX
+SESSIONS : position et puissance ont changé, ce sont deux conditions.
+
+Le passage à 14 dBm n'a pas déclenché de brownout sur le WROOM
+(seq continue sur toute la session, aucun redémarrage).
+Rounds 22-31 : phase intermédiaire, nœud 1 encore à 5 dBm, ~89 % de perte.
+Inexploitable, écartée. Rounds 20, 27-30 : clos à vide ou recollés, déchets.
+
+--- Participation ---
+22 rounds clos avec les 2 nœuds, durée médiane 56 s (avant le timeout).
+18 rounds clos avec 0 ou 1 nœud, durée 90 s (timeout).
+Nœud 1 : présent 25 fois, absent 15 fois.
+Nœud 2 : présent 37 fois, absent 3 fois.
+Les absences du nœud 1 se groupent dans le temps (rounds 46-51 : coupure).
+
+--- Erreur de prédiction (erreur.py) ---
+RMSE °C, horizon 15 min après closed_at, triplets à seq consécutifs.
+1412 lectures -> 1200 triplets (contre 319 le 4 septembre).
+
+noeud  persistance  w local  w global présent  w global absent  pénalité
+  1        0,039     0,036       0,539            1,042           x1,9
+  2        0,410     0,352       0,539            0,990           x1,8
+
+RESULTAT CLE : la pénalité se reproduit AVEC LES ROLES ECHANGES.
+x1,9 et x1,8 ici, contre x1,7 pour le nœud 2 le 4 septembre quand c'était
+lui le nœud éloigné. L'effet suit le LIEN RADIO, pas le nœud. C'est le
+contrôle qui manquait : on ne peut plus objecter que le modèle d'un nœud
+serait intrinsèquement mauvais.
+
+Modèle local meilleur que le global : 62 comparaisons sur 62 (non-i.i.d.).
+
+CORRECTION du 4 septembre : le modèle appris bat maintenant la persistance
+sur les DEUX nœuds (0,036 vs 0,039 ; 0,352 vs 0,410). La conclusion inverse
+tirée le 4 septembre reposait sur 319 triplets d'une nuit calme ; ici 1200
+triplets sur une plage horaire plus variable. C'est cette session qui fait foi.
+
+--- Radio et participation (participation.py) ---
+noeud  RSSI si présent  RSSI si absent  réception si présent  si absent
+  1        −95,8            −97,5              96 %             50 %
+  2        −52,2            −46,2              93 %             83 %
+
+Le RSSI moyen n'explique PAS l'exclusion (1,7 dB d'écart sur le nœud 1).
+Le TAUX DE RECEPTION l'explique : 96 % quand il participe, 50 % quand il
+manque, soit un facteur 2.
+Raison : biais du survivant. Le RSSI n'est mesuré que sur les paquets
+REÇUS. Quand le lien lâche, il n'y a pas de paquet faible, il n'y a pas de
+paquet. Le niveau moyen est donc un mauvais indicateur de la qualité du
+lien ; le débit de réception est le bon.
+Conséquence pour la v4 : historiser la réception, pas seulement le RSSI.
+
+--- Températures : l'hétérogénéité vient des capteurs, pas des pièces ---
+4 sept.  : n1 = 25,4 °C (pièce proche), n2 = 29,5 °C (pièce éloignée).
+5 sept.  : n1 = 26,2 °C (pièce ELOIGNEE), n2 = 30,5 °C (pièce PROCHE).
+Pièces échangées, l'écart de ~4 °C n'a pas suivi. Il suit les capteurs.
+Le +0,9 °C commun s'explique par l'heure (session nocturne vs midi).
+=> écart de calibration entre les deux DHT11 (tolérance ±2 °C), pas deux
+microclimats. Le nœud 2 est aussi 10x plus bruité que le nœud 1, dans les
+deux pièces : caractéristique du capteur, là encore.
+A CORRIGER dans README.md et docs/v3/V3_Rapport.md, qui parlent de
+« deux microclimats » et de « la pièce distante plus chaude ».
+L'hétérogénéité reste réelle et FedAvg y est bien confronté ; seule sa
+cause change, et un parc IoT réel dérive exactement comme ça.

@@ -13,6 +13,7 @@ from .fl_error import round_errors
 from .fl_ingest import FlUpdatePayload, ingest_fl_update
 from .fl_rounds import list_rounds, on_weight_update, pending_commands, start_round
 from .ingest import IngestPayload, ingest_reading
+from .network import link_history, response_latency
 from .seq import loss_rate
 from .ws import hub
 
@@ -225,6 +226,23 @@ async def api_commands(_: None = Depends(require_ingest_token)) -> dict:
     async with pool.acquire() as conn:
         commands = await pending_commands(conn)
     return {"commands": commands}
+
+
+@app.get("/api/network/history")
+async def api_link_history(
+    hours: int = Query(default=3, ge=1, le=72),
+    bucket_min: int = Query(default=5, ge=1, le=60),
+) -> dict:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        return await link_history(conn, hours, bucket_min)
+
+
+@app.get("/api/network/latency")
+async def api_response_latency(limit: int = Query(default=40, ge=1, le=200)) -> dict:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        return await response_latency(conn, limit)
 
 
 @app.get("/api/overview")

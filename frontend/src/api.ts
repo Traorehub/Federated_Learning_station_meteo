@@ -1,4 +1,12 @@
-import type { FlAuto, FlErrors, FlRound, Overview, Reading } from './types'
+import type {
+  FlAuto,
+  FlErrors,
+  FlRound,
+  LatencyHistory,
+  LinkHistory,
+  Overview,
+  Reading,
+} from './types'
 
 export async function fetchOverview(): Promise<Overview> {
   const res = await fetch('/api/overview')
@@ -16,6 +24,18 @@ export async function fetchRounds(): Promise<FlRound[]> {
 export async function fetchRoundErrors(): Promise<FlErrors> {
   const res = await fetch('/api/fl/errors')
   if (!res.ok) throw new Error(`errors ${res.status}`)
+  return res.json()
+}
+
+export async function fetchLinkHistory(hours: number, bucketMin: number): Promise<LinkHistory> {
+  const res = await fetch(`/api/network/history?hours=${hours}&bucket_min=${bucketMin}`)
+  if (!res.ok) throw new Error(`history ${res.status}`)
+  return res.json()
+}
+
+export async function fetchLatency(): Promise<LatencyHistory> {
+  const res = await fetch('/api/network/latency')
+  if (!res.ok) throw new Error(`latency ${res.status}`)
   return res.json()
 }
 

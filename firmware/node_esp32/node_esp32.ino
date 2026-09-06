@@ -7,10 +7,13 @@
  * Capture DHT toutes les 15 s (paquet v1, 14 octets).
  * Tampon local + SGD : prédire T[t] à partir de T[t-1], T[t-2], H[t-1].
  * Toutes les WEIGHT_EVERY mesures, envoi des 4 poids (27 octets, round_id).
- * Fenêtre RX 400 ms : start_round (0x10) et modèle global (0x30).
+ * Écoute continue entre deux TX : start_round (0x10) et modèle global (0x30).
+ * La fenêtre de 400 ms de la v2 était trop courte pour les retransmissions
+ * de la gateway et faisait manquer des rounds.
  *
- * TX labo 5 dBm (brownout). Pour 30-40 m indoor, préférer ce nœud
- * près de la gateway, ou tester 10 dBm si l'alim tient.
+ * TX 14 dBm, aligné sur le S3 pour que seule la position distingue les
+ * clients. Le brownout observé en v1 ne s'est pas reproduit ; s'il revient,
+ * redescendre vers 10 dBm.
  *
  * Bibliothèques : LoRa (Sandeep Mistry), DHT sensor library (Adafruit).
  */
@@ -25,7 +28,6 @@
 #define NODE_ID            1
 #define SEND_INTERVAL_MS   15000UL
 #define WEIGHT_EVERY       4
-#define RX_WINDOW_MS       400UL
 
 #define DHTPIN             4
 #define DHTTYPE            DHT11
@@ -41,7 +43,11 @@
 #define LORA_SF            7
 #define LORA_BW            125E3
 #define LORA_CR            5
-#define LORA_TX_POWER      5
+// Passé de 5 à 14 dBm pour égaliser avec le S3 : les deux nœuds ayant été
+// échangés de pièce, la puissance ne doit plus être une variable.
+// Le WROOM avait déclenché son brownout à 14 dBm en v1 (voir V1_Rapport) :
+// si « Brownout detector was triggered » réapparaît, redescendre vers 10.
+#define LORA_TX_POWER      14
 #define LORA_SYNC          0x12
 
 DHT dht(DHTPIN, DHTTYPE);

@@ -12,7 +12,7 @@ RA-02 = SX1278, bande **433 MHz**. C’est le canal mesuré par le banc : RSSI, 
 | Spreading factor | **SF7** | Débit maximal, portée de laboratoire suffisante |
 | Bande passante | **125 kHz** | Valeur courante, proche de LoRaWAN |
 | Coding rate | **4/5** | Compromis redondance / débit |
-| TX power | S3 / Uno **14 dBm** ; WROOM **5 dBm** | Brownout du WROOM à 14 dBm en labo |
+| TX power | **14 dBm** sur les trois cartes | Égalisées pour que seule la position distingue les clients. Le WROOM était à 5 dBm après un brownout en v1 ; il tient 14 dBm sans reboot dans les conditions d’alimentation actuelles. Si `Brownout detector was triggered` réapparaît, redescendre vers 10 dBm. |
 | Sync word | **0x12** | Réseau privé (0x34 est le mot LoRaWAN public) |
 | Preamble | **8** | Défaut de la bibliothèque LoRa |
 | Intervalle d’envoi nœud | **15 s** | Dans la plage 10-30 s |
